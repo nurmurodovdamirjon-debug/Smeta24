@@ -77,8 +77,11 @@ export function initTelegramApp() {
     tg.ready();
     tg.expand();
     try {
-      tg.headerColor = '#090d16';
-      tg.backgroundColor = '#020617';
+      const ver = parseFloat(tg.version || "0");
+      if (ver >= 6.1) {
+        tg.headerColor = "#090d16";
+        tg.backgroundColor = "#020617";
+      }
     } catch {
       // Ignored if not supported in client version
     }

@@ -4,7 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 def get_main_menu_keyboard(web_app_url: str = None):
     load_dotenv(override=True)
-    url = web_app_url or os.getenv("WEB_APP_URL", "https://plains-revealed-within-equation.trycloudflare.com")
+    url = web_app_url or os.getenv("WEB_APP_URL", "https://smeta24.vercel.app")
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
