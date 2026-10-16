@@ -9,6 +9,8 @@ import {
   FloorWorkType,
   QualityTier,
   RoomInput,
+  CONFIGURABLE_MATERIALS,
+  CONFIGURABLE_LABOR_RATES,
 } from "@/lib/calculator";
 import {
   initTelegramApp,
@@ -26,9 +28,7 @@ import {
   Unlock,
   Sparkles,
   CheckCircle2,
-  Download,
   Info,
-  MapPin,
   ShoppingBag,
   X,
   CreditCard,
@@ -36,11 +36,11 @@ import {
   Loader2,
   Printer,
   Send,
-  Paintbrush,
-  Hammer,
-  Layers,
-  ChevronDown,
   Settings,
+  RotateCcw,
+  Store,
+  Wrench,
+  Check,
 } from "lucide-react";
 
 export default function Smeta24MiniApp() {
@@ -50,67 +50,69 @@ export default function Smeta24MiniApp() {
   // Telegram User
   const [tgUser, setTgUser] = useState<TelegramUser | null>(null);
 
-  // 1. Xona Geometriyasi
+  // 1. Xona Geometriyasi (Matn holatida - 0 bilan bog'liq xatoni yo'qotish uchun)
   const [roomName, setRoomName] = useState("Mehmonxona");
-  const [length, setLength] = useState<number>(5.5);
-  const [width, setWidth] = useState<number>(4.0);
-  const [height, setHeight] = useState<number>(3.0);
-  const [openingsArea, setOpeningsArea] = useState<number>(4.2);
+  const [length, setLength] = useState<string>("5.5");
+  const [width, setWidth] = useState<string>("4.0");
+  const [height, setHeight] = useState<string>("3.0");
+  const [openingsArea, setOpeningsArea] = useState<string>("4.2");
+
+  // Raqamli kiritishda qulaylik: vergulni nuqtaga almashtirish va bo'sh qolganda 0 chiqmasligi
+  const handleDecimalChange = (
+    val: string,
+    setter: React.Dispatch<React.SetStateAction<string>>
+  ) => {
+    const cleaned = val.replace(",", ".");
+    if (cleaned === "" || /^\d*\.?\d*$/.test(cleaned)) {
+      setter(cleaned);
+    }
+  };
 
   // 2. Modulli Ta'mir Tanlovlari (Shift, Devor, Pol)
-  // Shift (Ceiling)
   const [ceilingWork, setCeilingWork] = useState<CeilingWorkType>("gipsokarton_plain");
 
-  // Devor (Wall)
   const [wallWork, setWallWork] = useState<WallWorkType>("paint_spray");
   const [includePlaster, setIncludePlaster] = useState<boolean>(false);
   const [includePautinka, setIncludePautinka] = useState<boolean>(true);
   const [plasterThickness, setPlasterThickness] = useState<number>(1.0);
 
-  // Pol (Floor)
   const [floorWork, setFloorWork] = useState<FloorWorkType>("laminate");
   const [includeScreed, setIncludeScreed] = useState<boolean>(false);
   const [includeSelfLeveling, setIncludeSelfLeveling] = useState<boolean>(false);
 
-  // Segment
   const [tier, setTier] = useState<QualityTier>("standard");
 
   // 3. Usta PRO Sozlamalari
   const [isMasterMode, setIsMasterMode] = useState<boolean>(true);
   const [brandName, setBrandName] = useState<string>("ProFinish Uz");
   const [masterPhone, setMasterPhone] = useState<string>("+998 90 123 45 67");
-  const [userBalance, setUserBalance] = useState<number>(15000); // 15 000 so'm default balance
-  const [showRateSettings, setShowRateSettings] = useState<boolean>(false);
+  const [userBalance, setUserBalance] = useState<number>(15000);
+
+  // Profil sozlamalari ichki tabi: 'rates' | 'materials'
+  const [profileSubTab, setProfileSubTab] = useState<'rates' | 'materials'>('rates');
+  const [profileCategoryFilter, setProfileCategoryFilter] = useState<string>('Barchasi');
 
   // Usta shaxsiy stavkalari (1 m2)
-  const [masterRates, setMasterRates] = useState<Record<string, number>>({
-    // Shift
-    ceiling_paint_roller: 25000,
-    ceiling_paint_spray: 35000,
-    ceiling_gipsokarton_plain: 50000,
-    ceiling_gipsokarton_decor: 85000,
-    ceiling_stretch: 65000,
+  const initialLaborRates: Record<string, number> = useMemo(() => {
+    const map: Record<string, number> = {};
+    CONFIGURABLE_LABOR_RATES.forEach((r) => {
+      map[r.id] = r.defaultRate;
+    });
+    return map;
+  }, []);
 
-    // Devor
-    wall_paint_roller: 30000,
-    wall_paint_spray: 40000,
-    wall_wallpaper: 30000,
-    wall_tile: 90000,
-    wall_paint_standard: 25000,
-    wall_plaster: 35000,
-    wall_pautinka: 20000,
+  const [masterRates, setMasterRates] = useState<Record<string, number>>(initialLaborRates);
 
-    // Pol
-    floor_screed: 35000,
-    floor_self_leveling: 20000,
-    floor_laminate: 25000,
-    floor_parquet: 85000,
-    floor_tile: 95000,
-  });
+  // Tuman / Do'kon material narxlari
+  const initialMaterialPrices: Record<string, number> = useMemo(() => {
+    const map: Record<string, number> = {};
+    CONFIGURABLE_MATERIALS.forEach((m) => {
+      map[m.code] = m.defaultPrice;
+    });
+    return map;
+  }, []);
 
-  const updateMasterRate = (key: string, val: number) => {
-    setMasterRates((prev) => ({ ...prev, [key]: val }));
-  };
+  const [materialPrices, setMaterialPrices] = useState<Record<string, number>>(initialMaterialPrices);
 
   // 4. Modallar va Statuslar
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
@@ -122,6 +124,7 @@ export default function Smeta24MiniApp() {
   const [clientRegion, setClientRegion] = useState<string>("Toshkent shahri");
   const [isSendingPdf, setIsSendingPdf] = useState<boolean>(false);
   const [pdfStatusMsg, setPdfStatusMsg] = useState<string>("");
+  const [saveToast, setSaveToast] = useState<string>("");
 
   // Lead-birja holati
   const [leadsList, setLeadsList] = useState([
@@ -160,15 +163,31 @@ export default function Smeta24MiniApp() {
     },
   ]);
 
-  // Init Telegram safely post-hydration
+  // Init Telegram & localStorage dan saqlangan sozlamalarni yuklash
   useEffect(() => {
+    try {
+      const savedRates = localStorage.getItem("smeta24_master_rates");
+      if (savedRates) setMasterRates(JSON.parse(savedRates));
+
+      const savedMaterials = localStorage.getItem("smeta24_material_prices");
+      if (savedMaterials) setMaterialPrices(JSON.parse(savedMaterials));
+
+      const savedBrand = localStorage.getItem("smeta24_brand_name");
+      if (savedBrand) setBrandName(savedBrand);
+
+      const savedPhone = localStorage.getItem("smeta24_master_phone");
+      if (savedPhone) setMasterPhone(savedPhone);
+    } catch (e) {
+      console.warn("Storage load error:", e);
+    }
+
     const handleInit = () => {
       try {
         initTelegramApp();
         const user = getTelegramUser();
         if (user) {
           setTgUser(user);
-          if (user.first_name) {
+          if (user.first_name && !localStorage.getItem("smeta24_brand_name")) {
             setBrandName(`Usta ${user.first_name}`);
           }
         }
@@ -193,6 +212,51 @@ export default function Smeta24MiniApp() {
       }
     }
   }, []);
+
+  const updateMasterRate = (key: string, val: number) => {
+    setMasterRates((prev) => {
+      const updated = { ...prev, [key]: val };
+      try {
+        localStorage.setItem("smeta24_master_rates", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    showQuickToast("Usta narxi saqlandi ✅");
+  };
+
+  const updateMaterialPrice = (key: string, val: number) => {
+    setMaterialPrices((prev) => {
+      const updated = { ...prev, [key]: val };
+      try {
+        localStorage.setItem("smeta24_material_prices", JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    showQuickToast("Material narxi saqlandi ✅");
+  };
+
+  const showQuickToast = (msg: string) => {
+    setSaveToast(msg);
+    setTimeout(() => setSaveToast(""), 2000);
+  };
+
+  const resetRatesToDefault = () => {
+    triggerHaptic("medium");
+    setMasterRates(initialLaborRates);
+    try {
+      localStorage.removeItem("smeta24_master_rates");
+    } catch (e) {}
+    showQuickToast("Standart narxlar tiklandi 🔄");
+  };
+
+  const resetMaterialsToDefault = () => {
+    triggerHaptic("medium");
+    setMaterialPrices(initialMaterialPrices);
+    try {
+      localStorage.removeItem("smeta24_material_prices");
+    } catch (e) {}
+    showQuickToast("Standart narxlar tiklandi 🔄");
+  };
 
   // Preset Xonalar (Tezkor Shablonlar)
   const presets = [
@@ -271,10 +335,10 @@ export default function Smeta24MiniApp() {
   const applyPreset = (p: typeof presets[0]) => {
     triggerHaptic("medium");
     setRoomName(p.name);
-    setLength(p.l);
-    setWidth(p.w);
-    setHeight(p.h);
-    setOpeningsArea(p.op);
+    setLength(String(p.l));
+    setWidth(String(p.w));
+    setHeight(String(p.h));
+    setOpeningsArea(String(p.op));
     setCeilingWork(p.ceiling);
     setWallWork(p.wall);
     setIncludePautinka(p.pautinka);
@@ -285,13 +349,18 @@ export default function Smeta24MiniApp() {
   };
 
   // Kalkulyator natijasi (Jonli hisob-kitob)
+  const numLength = parseFloat(length) || 0;
+  const numWidth = parseFloat(width) || 0;
+  const numHeight = parseFloat(height) || 0;
+  const numOpenings = parseFloat(openingsArea) || 0;
+
   const estimate = useMemo(() => {
     const input: RoomInput = {
       roomName,
-      length,
-      width,
-      height,
-      openingsArea,
+      length: numLength,
+      width: numWidth,
+      height: numHeight,
+      openingsArea: numOpenings,
       ceilingWork,
       wallWork,
       includePlaster,
@@ -302,14 +371,15 @@ export default function Smeta24MiniApp() {
       includeSelfLeveling,
       tier,
       masterRates,
+      materialPrices,
     };
     return calculateSmartEstimate(input);
   }, [
     roomName,
-    length,
-    width,
-    height,
-    openingsArea,
+    numLength,
+    numWidth,
+    numHeight,
+    numOpenings,
     ceilingWork,
     wallWork,
     includePlaster,
@@ -320,6 +390,7 @@ export default function Smeta24MiniApp() {
     includeSelfLeveling,
     tier,
     masterRates,
+    materialPrices,
   ]);
 
   // PDF sotib olish (Unlock)
@@ -393,9 +464,9 @@ export default function Smeta24MiniApp() {
         body: JSON.stringify({
           chat_id: chatId,
           room_name: roomName,
-          length,
-          width,
-          height,
+          length: numLength,
+          width: numWidth,
+          height: numHeight,
           total_area: estimate.geometry.totalWorkArea,
           brand_name: brandName,
           master_phone: masterPhone,
@@ -479,6 +550,13 @@ export default function Smeta24MiniApp() {
         </button>
       </header>
 
+      {/* Saqlash Toast Bildirishnomasi */}
+      {saveToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-slate-950 font-bold text-xs px-4 py-1.5 rounded-full shadow-lg animate-in fade-in slide-in-from-top-2">
+          {saveToast}
+        </div>
+      )}
+
       {/* 2. MAIN CONTENT BY ACTIVE TAB */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {activeTab === "calc" && (
@@ -503,7 +581,7 @@ export default function Smeta24MiniApp() {
               ))}
             </div>
 
-            {/* 1-BLOK: XONA GEOMETRIYASI */}
+            {/* 1-BLOK: XONA GEOMETRIYASI (O'chirilganda 0 chiqmaydigan, toza inputlar) */}
             <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
                 <div className="flex items-center gap-2">
@@ -523,16 +601,18 @@ export default function Smeta24MiniApp() {
                 />
               </div>
 
-              {/* 3 ta o'lcham */}
+              {/* 3 ta o'lcham - inputMode decimal va toza tozalash */}
               <div className="grid grid-cols-3 gap-2.5">
                 <div>
                   <label className="text-[10px] text-slate-400 block mb-1">Uzunligi (L)</label>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       value={length}
-                      onChange={(e) => setLength(parseFloat(e.target.value) || 0)}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => handleDecimalChange(e.target.value, setLength)}
+                      placeholder="0"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
                     />
                     <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
@@ -542,10 +622,12 @@ export default function Smeta24MiniApp() {
                   <label className="text-[10px] text-slate-400 block mb-1">Eni (W)</label>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       value={width}
-                      onChange={(e) => setWidth(parseFloat(e.target.value) || 0)}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => handleDecimalChange(e.target.value, setWidth)}
+                      placeholder="0"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
                     />
                     <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
@@ -555,10 +637,12 @@ export default function Smeta24MiniApp() {
                   <label className="text-[10px] text-slate-400 block mb-1">Balandligi (H)</label>
                   <div className="relative">
                     <input
-                      type="number"
-                      step="0.1"
+                      type="text"
+                      inputMode="decimal"
                       value={height}
-                      onChange={(e) => setHeight(parseFloat(e.target.value) || 0)}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => handleDecimalChange(e.target.value, setHeight)}
+                      placeholder="0"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
                     />
                     <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
@@ -569,14 +653,16 @@ export default function Smeta24MiniApp() {
               {/* Eshik va deraza o'lchamlari */}
               <div>
                 <label className="text-[10px] text-slate-400 block mb-1">
-                  Eshik va Derazalar jami yuzasi (ayirib tashlanadi)
+                  Eshik va Derazalar jami yuzasi (devor maydonidan chegiriladi)
                 </label>
                 <div className="relative">
                   <input
-                    type="number"
-                    step="0.1"
+                    type="text"
+                    inputMode="decimal"
                     value={openingsArea}
-                    onChange={(e) => setOpeningsArea(parseFloat(e.target.value) || 0)}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => handleDecimalChange(e.target.value, setOpeningsArea)}
+                    placeholder="0"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-8"
                   />
                   <span className="absolute right-3 top-2.5 text-[10px] text-slate-500 font-medium">m²</span>
@@ -974,7 +1060,7 @@ export default function Smeta24MiniApp() {
               </div>
             </section>
 
-            {/* 5-BLOK: 🏷️ MATERIALLAR TARIFA & USTA PRO REJIMI */}
+            {/* 5-BLOK: 🏷️ MATERIALLAR TARIFA & PROFILGA O'TISH */}
             <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
               <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                 <div className="flex items-center gap-2">
@@ -985,7 +1071,7 @@ export default function Smeta24MiniApp() {
                     <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
                       Material Segmenti & Usta PRO
                     </h2>
-                    <p className="text-[10px] text-slate-400">Smeta brendi va usta narxlarini boshqarish</p>
+                    <p className="text-[10px] text-slate-400">Brending va shaxsiy narxlar boshqaruvi</p>
                   </div>
                 </div>
                 <input
@@ -1030,7 +1116,10 @@ export default function Smeta24MiniApp() {
                       <input
                         type="text"
                         value={brandName}
-                        onChange={(e) => setBrandName(e.target.value)}
+                        onChange={(e) => {
+                          setBrandName(e.target.value);
+                          localStorage.setItem("smeta24_brand_name", e.target.value);
+                        }}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
                       />
                     </div>
@@ -1039,118 +1128,30 @@ export default function Smeta24MiniApp() {
                       <input
                         type="text"
                         value={masterPhone}
-                        onChange={(e) => setMasterPhone(e.target.value)}
+                        onChange={(e) => {
+                          setMasterPhone(e.target.value);
+                          localStorage.setItem("smeta24_master_phone", e.target.value);
+                        }}
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
                       />
                     </div>
                   </div>
 
-                  {/* Stavkalarni sozlash tugmasi */}
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setShowRateSettings(!showRateSettings)}
-                      className="w-full bg-slate-950 hover:bg-slate-800/80 border border-slate-800 rounded-xl p-2.5 text-xs font-semibold text-slate-300 flex items-center justify-between transition"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Settings className="w-3.5 h-3.5 text-amber-400" />
-                        <span>1 m² uchun usta narxlarini tahrirlash</span>
-                      </div>
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 transition-transform ${showRateSettings ? "rotate-180" : ""}`}
-                      />
-                    </button>
-
-                    {showRateSettings && (
-                      <div className="mt-2 bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-2.5 text-xs">
-                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                          Tanlangan ishlar bo&apos;yicha stavkalar:
-                        </span>
-                        <div className="grid grid-cols-2 gap-2">
-                          {/* Shift narxi */}
-                          {ceilingWork !== "none" && (
-                            <div>
-                              <label className="text-[9.5px] text-slate-400 block mb-0.5 truncate">
-                                Shift ({ceilingWork}):
-                              </label>
-                              <input
-                                type="number"
-                                value={masterRates[`ceiling_${ceilingWork}`] || 0}
-                                onChange={(e) =>
-                                  updateMasterRate(`ceiling_${ceilingWork}`, Number(e.target.value))
-                                }
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs font-bold text-amber-300"
-                              />
-                            </div>
-                          )}
-
-                          {/* Devor narxi */}
-                          {wallWork !== "none" && (
-                            <div>
-                              <label className="text-[9.5px] text-slate-400 block mb-0.5 truncate">
-                                Devor ({wallWork}):
-                              </label>
-                              <input
-                                type="number"
-                                value={masterRates[`wall_${wallWork}`] || 0}
-                                onChange={(e) =>
-                                  updateMasterRate(`wall_${wallWork}`, Number(e.target.value))
-                                }
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs font-bold text-amber-300"
-                              />
-                            </div>
-                          )}
-
-                          {/* Pol narxi */}
-                          {floorWork !== "none" && (
-                            <div>
-                              <label className="text-[9.5px] text-slate-400 block mb-0.5 truncate">
-                                Pol ({floorWork}):
-                              </label>
-                              <input
-                                type="number"
-                                value={masterRates[`floor_${floorWork}`] || 0}
-                                onChange={(e) =>
-                                  updateMasterRate(`floor_${floorWork}`, Number(e.target.value))
-                                }
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs font-bold text-amber-300"
-                              />
-                            </div>
-                          )}
-
-                          {/* Suvoq narxi */}
-                          {includePlaster && (
-                            <div>
-                              <label className="text-[9.5px] text-slate-400 block mb-0.5 truncate">
-                                Suvoq (1 m²):
-                              </label>
-                              <input
-                                type="number"
-                                value={masterRates.wall_plaster || 35000}
-                                onChange={(e) => updateMasterRate("wall_plaster", Number(e.target.value))}
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs font-bold text-amber-300"
-                              />
-                            </div>
-                          )}
-
-                          {/* Styajka narxi */}
-                          {includeScreed && (
-                            <div>
-                              <label className="text-[9.5px] text-slate-400 block mb-0.5 truncate">
-                                Styajka (1 m²):
-                              </label>
-                              <input
-                                type="number"
-                                value={masterRates.floor_screed || 35000}
-                                onChange={(e) => updateMasterRate("floor_screed", Number(e.target.value))}
-                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs font-bold text-amber-300"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Profil narxlari boshqaruviga to'g'ridan-to'g'ri o'tish */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setActiveTab("profile");
+                    }}
+                    className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/50 rounded-xl p-2.5 text-xs font-semibold text-amber-400 flex items-center justify-between transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-amber-400" />
+                      <span>Usta va Tuman material narxlarini sozlash</span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">Profilga o&apos;tish →</span>
+                  </button>
                 </div>
               )}
             </section>
@@ -1186,7 +1187,6 @@ export default function Smeta24MiniApp() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      {/* QADOQLAR SONI BLUR ELEMENTI */}
                       {isUnlocked ? (
                         <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded text-[11px]">
                           <CheckCircle2 className="w-3 h-3" />
@@ -1286,29 +1286,30 @@ export default function Smeta24MiniApp() {
           </>
         )}
 
-        {/* PROFILE TAB */}
+        {/* PROFIL TAB: USTA NARXLARI VA TUMAN MATERIAL NARXLARI SOZLAMALARI */}
         {activeTab === "profile" && (
           <div className="space-y-4">
+            {/* Profil bosh kartasi */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-center space-y-2">
               <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 mx-auto flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg shadow-amber-500/20">
-                {tgUser?.first_name ? tgUser.first_name[0] : "U"}
+                {brandName ? brandName[0] : "U"}
               </div>
               <h2 className="font-bold text-base text-white">
                 {brandName}
               </h2>
               <p className="text-xs text-slate-400">
-                {tgUser?.first_name ? `@${tgUser.username || tgUser.first_name}` : "@Smeta24Bot"}
+                📞 {masterPhone} • {tgUser?.username ? `@${tgUser.username}` : "@Smeta24Bot"}
               </p>
               <div className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-400 text-xs px-3 py-1 rounded-full font-bold border border-amber-500/30">
-                ⭐ Professional Usta
+                ⭐ Professional Usta & Narxlar Paneli
               </div>
             </div>
 
             {/* Balans Kartasi */}
-            <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400 font-medium">Sizning balansingiz:</span>
-                <span className="text-lg font-black text-emerald-400">
+            <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-3.5 flex justify-between items-center">
+              <div>
+                <span className="text-[11px] text-slate-400 block font-medium">Hamyon balansi:</span>
+                <span className="text-base font-black text-emerald-400">
                   {userBalance.toLocaleString("ru-RU")} so&apos;m
                 </span>
               </div>
@@ -1317,11 +1318,169 @@ export default function Smeta24MiniApp() {
                   triggerHaptic("medium");
                   setShowTopupModal(true);
                 }}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-2.5 rounded-xl shadow-md transition active:scale-95 flex items-center justify-center gap-2"
+                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3 py-2 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5"
               >
-                <Plus className="w-4 h-4 text-slate-950" />
-                <span>Balansni to&apos;ldirish</span>
+                <Plus className="w-3.5 h-3.5 text-slate-950" />
+                <span>To&apos;ldirish</span>
               </button>
+            </div>
+
+            {/* NARXLARNI SOZLASH BO'LIMI: IKKI TOIFA */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
+              {/* Ichki Tab Tugmalari */}
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => {
+                    triggerHaptic("light");
+                    setProfileSubTab("rates");
+                  }}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    profileSubTab === "rates"
+                      ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Usta xizmat haqi</span>
+                </button>
+                <button
+                  onClick={() => {
+                    triggerHaptic("light");
+                    setProfileSubTab("materials");
+                  }}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    profileSubTab === "materials"
+                      ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <Store className="w-3.5 h-3.5" />
+                  <span>Tuman material narxi</span>
+                </button>
+              </div>
+
+              {/* Kategoriya filterlari */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
+                {["Barchasi", "Shift", "Devor", "Pol"].map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setProfileCategoryFilter(cat)}
+                    className={`px-2.5 py-0.8 rounded-lg text-[10px] font-bold whitespace-nowrap transition border ${
+                      profileCategoryFilter === cat
+                        ? "bg-slate-800 text-amber-400 border-amber-500/40"
+                        : "bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* 1. USTA XIZMAT HAQI NARXLARI RO'YXATI */}
+              {profileSubTab === "rates" && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-[11px] text-slate-400 pb-1 border-b border-slate-800">
+                    <span>1 m² uchun usta mehnat haqi:</span>
+                    <button
+                      onClick={resetRatesToDefault}
+                      className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Standartga qaytarish</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-0.5">
+                    {CONFIGURABLE_LABOR_RATES.filter(
+                      (r) =>
+                        profileCategoryFilter === "Barchasi" ||
+                        r.category === profileCategoryFilter
+                    ).map((rateItem) => (
+                      <div
+                        key={rateItem.id}
+                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 pr-1">
+                          <p className="text-xs font-semibold text-slate-200 truncate">
+                            {rateItem.name}
+                          </p>
+                          <span className="text-[9px] text-amber-400/80 font-medium">
+                            {rateItem.category} • {rateItem.unit}
+                          </span>
+                        </div>
+                        <div className="w-28 shrink-0 relative">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={masterRates[rateItem.id] ?? rateItem.defaultRate}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value.replace(/\D/g, "")) || 0;
+                              updateMasterRate(rateItem.id, val);
+                            }}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-right font-black text-amber-300 focus:border-amber-400 outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. TUMAN MATERIAL NARXLARI RO'YXATI */}
+              {profileSubTab === "materials" && (
+                <div className="space-y-2">
+                  <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-[10.5px] text-slate-300 leading-snug">
+                    💡 <strong>Eslatma:</strong> Har bir tuman va viloyat bozorida materiallar narxi har xil. Bu yerga o&apos;zingiz xarid qiladigan narxlarni kiritsangiz, kalkulyator aynan shu narxlar bilan hisoblab beradi.
+                  </div>
+
+                  <div className="flex justify-between items-center text-[11px] text-slate-400 pb-1 border-b border-slate-800">
+                    <span>Do&apos;kon / Bozor narxlari:</span>
+                    <button
+                      onClick={resetMaterialsToDefault}
+                      className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Standartga qaytarish</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-0.5">
+                    {CONFIGURABLE_MATERIALS.filter(
+                      (m) =>
+                        profileCategoryFilter === "Barchasi" ||
+                        m.category === profileCategoryFilter
+                    ).map((matItem) => (
+                      <div
+                        key={matItem.code}
+                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 pr-1">
+                          <p className="text-xs font-semibold text-slate-200 truncate">
+                            {matItem.name}
+                          </p>
+                          <span className="text-[9px] text-sky-400/80 font-medium">
+                            {matItem.category} • 1 {matItem.unit} narxi
+                          </span>
+                        </div>
+                        <div className="w-28 shrink-0 relative">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={materialPrices[matItem.code] ?? matItem.defaultPrice}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value.replace(/\D/g, "")) || 0;
+                              updateMaterialPrice(matItem.code, val);
+                            }}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-right font-black text-emerald-300 focus:border-amber-400 outline-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Mualliflik ma'lumotnomasi */}
@@ -1409,14 +1568,14 @@ export default function Smeta24MiniApp() {
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 text-xs">
               {[
-                { name: "Gipskarton Knauf 9.5mm (2.4x1.2m)", norm: "1 list = 2.88 m²", pack: "Dona (52 000 so'm)" },
+                { name: "Gipskarton Knauf 9.5mm (1.2x2.5m)", norm: "1 list = 3.0 m²", pack: "Dona (52 000 so'm)" },
                 { name: "Profil UD 28/27 & CD 60/27", norm: "1 m² shiftga ~2.6-3.8 m", pack: "3 metrli rezon (18-26 ming)" },
-                { name: "Laminat 33-klass (faskali)", norm: "+8% kesishga zapas", pack: "2.13 m² pachka (~255 ming)" },
-                { name: "Parket / Inzhenernaya doska", norm: "+8% burchaklarga zapas", pack: "1 m² (~280 000 so'm)" },
+                { name: "Laminat 33-klass (faskali)", norm: "+7% kesishga zapas", pack: "2.13 m² pachka (~255 ming)" },
+                { name: "Parket / Inzhenernaya doska", norm: "+10% burchaklarga zapas", pack: "1 m² (~280 000 so'm)" },
                 { name: "2-komponentli parket yelimi", norm: "1 kg = ~0.8 m² pol", pack: "14 kg paqir (~420 000 so'm)" },
                 { name: "Pol steshkasi (5 sm styajka)", norm: "0.4 qop tsement / m²", pack: "50 kg qop M400 (~45 000)" },
                 { name: "Nalivnoy pol samonivelir", norm: "1.5 kg / mm / m²", pack: "25 kg qop (~65 000 so'm)" },
-                { name: "Vinil / Flizelin oboy", norm: "1 rulon = ~5 m² devor", pack: "1.06m x 10m (~180 000)" },
+                { name: "Vinil / Flizelin oboy", norm: "1 rulon = ~10 m² devor", pack: "1.06m x 10m (~180 000)" },
                 { name: "Pautinka stekloxolst (40g)", norm: "1.1 m² / m² devor", pack: "50 m² rulon (~240 000)" },
                 { name: "Kraskapultda purkash", norm: "0.22-0.24 litr / m²", pack: "15 L paqir (~420 000 so'm)" },
               ].map((row, i) => (
@@ -1467,9 +1626,9 @@ export default function Smeta24MiniApp() {
 
               {/* Geometriya */}
               <div className="bg-slate-100 p-2 rounded flex justify-between font-semibold text-[10px]">
-                <span>Uzunlik: {length}m</span>
-                <span>Eni: {width}m</span>
-                <span>Balandlik: {height}m</span>
+                <span>Uzunlik: {numLength}m</span>
+                <span>Eni: {numWidth}m</span>
+                <span>Balandlik: {numHeight}m</span>
                 <span className="text-amber-600 font-bold">JAMI: {estimate.geometry.totalWorkArea} m²</span>
               </div>
 
@@ -1716,9 +1875,9 @@ export default function Smeta24MiniApp() {
         <div className="flex justify-between items-center">
           {[
             { id: "calc" as const, label: "Kalkulyator", icon: Calculator },
+            { id: "profile" as const, label: "Narxlar & Profil", icon: UserCheck },
             { id: "leads" as const, label: "Lid-Birja", icon: Building2 },
             { id: "guide" as const, label: "Me'yorlar", icon: Info },
-            { id: "profile" as const, label: "Profilim", icon: UserCheck },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;

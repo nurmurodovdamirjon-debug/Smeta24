@@ -31,6 +31,9 @@ class RoomInput(BaseModel):
     # Usta stavkalari
     masterRates: Optional[Dict[str, float]] = None
 
+    # Tuman / Do'kon material narxlari
+    materialPrices: Optional[Dict[str, float]] = None
+
     # Eski versiyalar bilan moslik uchun:
     includeCeiling: Optional[bool] = None
     workType: Optional[str] = None

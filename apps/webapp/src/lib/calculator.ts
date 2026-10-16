@@ -50,6 +50,9 @@ export interface RoomInput {
 
   // Usta shaxsiy stavkalari (1 m2 yoki 1 m uchun)
   masterRates?: Record<string, number>;
+
+  // Hudud / Tuman bozor material narxlari
+  materialPrices?: Record<string, number>;
 }
 
 export interface MaterialItem {
@@ -93,6 +96,88 @@ export interface EstimateResult {
   grandTotal: number;
 }
 
+export interface MaterialConfig {
+  code: string;
+  aliases?: string[];
+  name: string;
+  unit: string;
+  defaultPrice: number;
+  category: 'Shift' | 'Devor' | 'Pol' | 'Umumiy';
+}
+
+export interface LaborRateConfig {
+  id: string;
+  aliases?: string[];
+  name: string;
+  unit: string;
+  defaultRate: number;
+  category: 'Shift' | 'Devor' | 'Pol';
+}
+
+// 2026-yil O'zbekiston viloyat va tumanlar bozor narxlari standarti
+export const CONFIGURABLE_MATERIALS: MaterialConfig[] = [
+  // Shift
+  { code: 'gips_sheet_9_5', aliases: ['gips_sheet_plain', 'gips_sheet_decor'], name: 'Gipskarton Knauf 9.5 mm (1.2x2.5m)', unit: 'dona', defaultPrice: 52000, category: 'Shift' },
+  { code: 'profile_ud_27', aliases: ['profile_decor_set'], name: 'Yo\'naltiruvchi profil UD-27 (3 metr)', unit: 'dona', defaultPrice: 18000, category: 'Shift' },
+  { code: 'profile_cd_60', name: 'Shift profili CD-60 (3 metr)', unit: 'dona', defaultPrice: 26000, category: 'Shift' },
+  { code: 'podves_tyaga', name: 'Shift ilgichlari (Podves ES)', unit: 'dona', defaultPrice: 2500, category: 'Shift' },
+  { code: 'stretch_ceiling_full', aliases: ['natyajnoy_potolok_m2'], name: 'Natyajnoy potolok (plyonka + montaj)', unit: 'm²', defaultPrice: 65000, category: 'Shift' },
+  { code: 'ceiling_paint_white_15l', aliases: ['ceiling_paint_white'], name: 'Shift oq bo\'yog\'i (15 L)', unit: 'paqir', defaultPrice: 380000, category: 'Shift' },
+
+  // Devor
+  { code: 'plaster_rotband_30kg', aliases: ['wall_rotband_plaster_30kg'], name: 'Gipsli suvoq Rotband (30 kg)', unit: 'qop', defaultPrice: 52000, category: 'Devor' },
+  { code: 'putty_start_25kg', aliases: ['wall_start_putty_25kg'], name: 'Start gipsli shpaklyovka (25 kg)', unit: 'qop', defaultPrice: 48000, category: 'Devor' },
+  { code: 'putty_finish_pasta_28kg', aliases: ['wall_finish_pasta_28kg'], name: 'Super Finish tayyor pasta (28 kg)', unit: 'paqir', defaultPrice: 260000, category: 'Devor' },
+  { code: 'putty_finish_dry_20kg', aliases: ['wall_finish_putty_20kg'], name: 'Finish quruq shpaklyovka (20 kg)', unit: 'qop', defaultPrice: 65000, category: 'Devor' },
+  { code: 'pautinka_roll_50m2', aliases: ['wall_pautinka_roll_50m2'], name: 'Stekloxolst Pautinka 40g/m² (50 m²)', unit: 'rulon', defaultPrice: 240000, category: 'Devor' },
+  { code: 'pautinka_glue_10kg', aliases: ['wall_pautinka_glue_10kg'], name: 'Pautinka uchun tayyor kley (10 kg)', unit: 'paqir', defaultPrice: 110000, category: 'Devor' },
+  { code: 'paint_wall_15l', aliases: ['wall_paint_premium_15l'], name: 'Devor uchun mat emulsiya bo\'yog\'i (15 L)', unit: 'paqir', defaultPrice: 420000, category: 'Devor' },
+  { code: 'wallpaper_vinil_roll', aliases: ['wallpaper_roll'], name: 'Vinil / Flizelin oboy (1.06m x 10m)', unit: 'rulon', defaultPrice: 180000, category: 'Devor' },
+  { code: 'wallpaper_glue_box', aliases: ['wallpaper_glue'], name: 'Flizelin oboy kleyi (quti)', unit: 'quti', defaultPrice: 45000, category: 'Devor' },
+  { code: 'tile_wall_pack', aliases: ['wall_tile_pack'], name: 'Devor kafel / plitka (1.44 m² pachka)', unit: 'pachka', defaultPrice: 160000, category: 'Devor' },
+  { code: 'tile_glue_c2_25kg', aliases: ['wall_tile_glue_25kg'], name: 'Kafel kleyi C2 kuchaytirilgan (25 kg)', unit: 'qop', defaultPrice: 55000, category: 'Devor' },
+
+  // Pol
+  { code: 'cement_m400_50kg', aliases: ['floor_screed_cement_50kg'], name: 'Sement M400 styajka uchun (50 kg)', unit: 'qop', defaultPrice: 45000, category: 'Pol' },
+  { code: 'self_leveling_25kg', aliases: ['floor_self_leveling_25kg'], name: 'Nalivnoy pol samonivelir (25 kg)', unit: 'qop', defaultPrice: 65000, category: 'Pol' },
+  { code: 'laminate_33_pack', aliases: ['laminate_pack'], name: 'Laminat 33-klass (2.13 m² pachka)', unit: 'pachka', defaultPrice: 255000, category: 'Pol' },
+  { code: 'underlay_roll_10m2', aliases: ['laminate_subfloor_pack'], name: 'Laminat osti podlojkasi 3mm (10 m²)', unit: 'rulon', defaultPrice: 45000, category: 'Pol' },
+  { code: 'plinth_pvc_2_5m', aliases: ['plinth_plastic_2_5m'], name: 'PVX rezinali pol plintusi (2.5 metr)', unit: 'dona', defaultPrice: 22000, category: 'Pol' },
+  { code: 'parquet_board_m2', name: 'Tabiiy parket / Inzhener doska (1 m²)', unit: 'm²', defaultPrice: 280000, category: 'Pol' },
+  { code: 'parquet_glue_14kg', name: 'Poliuretan 2K parket yelimi (14 kg)', unit: 'paqir', defaultPrice: 420000, category: 'Pol' },
+  { code: 'plinth_wood_2_4m', name: 'Yog\'och / MDF shponli plintus (2.4 m)', unit: 'dona', defaultPrice: 45000, category: 'Pol' },
+  { code: 'tile_floor_pack', aliases: ['floor_tile_pack'], name: 'Pol keramogranit (1.44 m² pachka)', unit: 'pachka', defaultPrice: 195000, category: 'Pol' },
+
+  // Umumiy
+  { code: 'primer_deep_10l', aliases: ['primer_10l'], name: 'Chuqur singuvchi gruntovka (10 L)', unit: 'kanistra', defaultPrice: 85000, category: 'Umumiy' },
+];
+
+export const CONFIGURABLE_LABOR_RATES: LaborRateConfig[] = [
+  // Shift
+  { id: 'ceiling_gips_plain', aliases: ['ceiling_gipsokarton_plain'], name: 'Shiftga tekis gipskarton montaji', unit: 'so\'m/m²', defaultRate: 50000, category: 'Shift' },
+  { id: 'ceiling_gips_decor', aliases: ['ceiling_gipsokarton_decor'], name: 'Shiftga figurali/naqshli gipskarton', unit: 'so\'m/m²', defaultRate: 85000, category: 'Shift' },
+  { id: 'ceiling_paint_spray', aliases: ['ceiling_spray'], name: 'Shift: Shpaklyovka + Kraskapultda purkash', unit: 'so\'m/m²', defaultRate: 35000, category: 'Shift' },
+  { id: 'ceiling_paint_roller', aliases: ['ceiling_roller'], name: 'Shift: Shpaklyovka + Valikda bo\'yash', unit: 'so\'m/m²', defaultRate: 25000, category: 'Shift' },
+  { id: 'ceiling_stretch', name: 'Natyajnoy potolok o\'rnatish', unit: 'so\'m/m²', defaultRate: 65000, category: 'Shift' },
+
+  // Devor
+  { id: 'wall_plaster', name: 'Mayoq bo\'yicha gipsli suvoq (Rotband)', unit: 'so\'m/m²', defaultRate: 35000, category: 'Devor' },
+  { id: 'wall_putty', name: 'Devorlarni shpaklyovka qilish (Start + Finish)', unit: 'so\'m/m²', defaultRate: 30000, category: 'Devor' },
+  { id: 'wall_pautinka', name: 'Stekloxolst (Pautinka) yopishtirish', unit: 'so\'m/m²', defaultRate: 20000, category: 'Devor' },
+  { id: 'wall_paint_spray', aliases: ['wall_spray'], name: 'Devor: Shpaklyovka + Kraskapultda purkash', unit: 'so\'m/m²', defaultRate: 40000, category: 'Devor' },
+  { id: 'wall_paint_roller', aliases: ['wall_roller'], name: 'Devor: Shpaklyovka + Valikda bo\'yash', unit: 'so\'m/m²', defaultRate: 30000, category: 'Devor' },
+  { id: 'wall_wallpaper', name: 'Vinil / Flizelin oboy yopishtirish', unit: 'so\'m/m²', defaultRate: 30000, category: 'Devor' },
+  { id: 'wall_tile', name: 'Devorga kafel terish va zatirka', unit: 'so\'m/m²', defaultRate: 90000, category: 'Devor' },
+  { id: 'wall_paint_standard', name: 'Standart shpaklyovka va bo\'yash', unit: 'so\'m/m²', defaultRate: 25000, category: 'Devor' },
+
+  // Pol
+  { id: 'floor_screed', name: 'Pol steshkasi (Beton styajka, 5 sm)', unit: 'so\'m/m²', defaultRate: 35000, category: 'Pol' },
+  { id: 'floor_self_leveling', name: 'Nalivnoy pol quyish va tekislash', unit: 'so\'m/m²', defaultRate: 20000, category: 'Pol' },
+  { id: 'floor_laminate', name: 'Laminat va plintus yotqizish', unit: 'so\'m/m²', defaultRate: 25000, category: 'Pol' },
+  { id: 'floor_parquet', name: 'Parket yotqizish, yelimlash va plintus', unit: 'so\'m/m²', defaultRate: 85000, category: 'Pol' },
+  { id: 'floor_tile', name: 'Polga keramogranit / kafel yotqizish', unit: 'so\'m/m²', defaultRate: 95000, category: 'Pol' },
+];
+
 export function formatUZS(amount: number): string {
   return `${Math.round(amount).toLocaleString('ru-RU')} so'm`;
 }
@@ -109,14 +194,13 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
   const rawWallArea = Number((perimeter * height).toFixed(2));
   const netWallArea = Number(Math.max(0, rawWallArea - openingsArea).toFixed(2));
   const ceilingArea = input.ceilingWork !== 'none' ? Number((length * width).toFixed(2)) : 0;
-  const floorArea = input.floorWork !== 'none' || input.includeScreed || input.includeSelfLeveling 
+  const floorArea = (input.floorWork !== 'none' || input.includeScreed || input.includeSelfLeveling)
     ? Number((length * width).toFixed(2)) 
     : 0;
   
   // Plintus uzunligi (eshik o'rni ~0.9m chiqariladi)
   const estimatedDoorWidth = openingsArea > 0 ? 0.9 : 0;
   const plinthLength = Number(Math.max(0, perimeter - estimatedDoorWidth).toFixed(2));
-
   const totalWorkArea = Number((netWallArea + ceilingArea).toFixed(2));
 
   const materials: MaterialItem[] = [];
@@ -125,6 +209,42 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
   // Narx segmenti koeffitsiyenti (Ekonom 0.85, Standart 1.0, Premium 1.35)
   const tierMultiplier = tier === 'premium' ? 1.35 : tier === 'econom' ? 0.85 : 1.0;
   const rates = input.masterRates || {};
+  const customMaterialPrices = input.materialPrices || {};
+
+  // Narxni tuman/do'kon kiritilgan narxi yoki bazaviy narxdan aniqlash funksiyasi
+  const getMaterialPrice = (code: string, defaultPrice: number): number => {
+    if (customMaterialPrices[code] !== undefined && customMaterialPrices[code] > 0) {
+      return customMaterialPrices[code];
+    }
+    const conf = CONFIGURABLE_MATERIALS.find(m => m.code === code || m.aliases?.includes(code));
+    if (conf) {
+      if (customMaterialPrices[conf.code] !== undefined && customMaterialPrices[conf.code] > 0) {
+        return customMaterialPrices[conf.code];
+      }
+      if (conf.aliases) {
+        for (const al of conf.aliases) {
+          if (customMaterialPrices[al] !== undefined && customMaterialPrices[al] > 0) {
+            return customMaterialPrices[al];
+          }
+        }
+      }
+    }
+    return Math.round(defaultPrice * tierMultiplier);
+  };
+
+  const getLaborRate = (id: string, defaultRate: number): number => {
+    if (rates[id] !== undefined && rates[id] > 0) return rates[id];
+    const conf = CONFIGURABLE_LABOR_RATES.find(l => l.id === id || l.aliases?.includes(id));
+    if (conf) {
+      if (rates[conf.id] !== undefined && rates[conf.id] > 0) return rates[conf.id];
+      if (conf.aliases) {
+        for (const al of conf.aliases) {
+          if (rates[al] !== undefined && rates[al] > 0) return rates[al];
+        }
+      }
+    }
+    return defaultRate;
+  };
 
   // =========================================================================
   // A. SHIFT ISHLARI (CEILING)
@@ -132,8 +252,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
   if (input.ceilingWork !== 'none' && ceilingArea > 0) {
     // 1. Gipskarton tekis (1 qavatli)
     if (input.ceilingWork === 'gipsokarton_plain') {
-      const gipsSheets = Math.ceil((ceilingArea * 1.08) / 3.0); // 1 list = 1.2x2.5 = 3m2, +8% kesish
-      const sheetPrice = Math.round(52000 * tierMultiplier);
+      const gipsSheets = Math.ceil((ceilingArea * 1.08) / 3.0);
+      const sheetPrice = getMaterialPrice('gips_sheet_9_5', 52000);
       materials.push({
         code: 'gips_sheet_9_5',
         name: 'Gipskarton Knauf 9.5 mm (Shift uchun)',
@@ -148,9 +268,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Shift tekislash va montaj qilish uchun Knauf gipskarton'
       });
 
-      // Profil UD-27 (perimetr bo'yicha)
+      // Profil UD-27
       const udProfiles = Math.ceil(perimeter / 3.0);
-      const udPrice = Math.round(18000 * tierMultiplier);
+      const udPrice = getMaterialPrice('profile_ud_27', 18000);
       materials.push({
         code: 'profile_ud_27',
         name: 'Profil UD-27 yo\'naltiruvchi (3 metrli)',
@@ -164,9 +284,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: udProfiles * udPrice,
       });
 
-      // Profil CD-60 (har 40-50 sm da)
+      // Profil CD-60
       const cdProfiles = Math.ceil(ceilingArea * 0.9);
-      const cdPrice = Math.round(26000 * tierMultiplier);
+      const cdPrice = getMaterialPrice('profile_cd_60', 26000);
       materials.push({
         code: 'profile_cd_60',
         name: 'Profil CD-60 asosiy tirkagich (3 metrli)',
@@ -180,9 +300,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: cdProfiles * cdPrice,
       });
 
-      // Podves (ilgichlar) va samorez to'plami
+      // Podves
       const podvesCount = Math.ceil(ceilingArea * 2.5);
-      const podvesPrice = 2500;
+      const podvesPrice = getMaterialPrice('podves_tyaga', 2500);
       materials.push({
         code: 'podves_tyaga',
         name: 'Shift ilgichlari (Podves to\'g\'ridan-to\'g\'ri)',
@@ -196,7 +316,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: podvesCount * podvesPrice,
       });
 
-      const rate = rates['ceiling_gips_plain'] || 50000;
+      const rate = getLaborRate('ceiling_gips_plain', 50000);
       laborItems.push({
         id: 'labor_ceiling_gips_plain',
         name: 'Shiftga tekis gipskarton montaj qilish',
@@ -208,10 +328,10 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
       });
     }
 
-    // 2. Gipskarton naqshli / figurali (2 qavatli quti + LED)
+    // 2. Gipskarton naqshli / figurali (2 qavatli)
     else if (input.ceilingWork === 'gipsokarton_decor') {
-      const gipsSheets = Math.ceil((ceilingArea * 1.45) / 3.0); // 2-qavat qutilar bilan +45%
-      const sheetPrice = Math.round(52000 * tierMultiplier);
+      const gipsSheets = Math.ceil((ceilingArea * 1.45) / 3.0);
+      const sheetPrice = getMaterialPrice('gips_sheet_9_5', 52000);
       materials.push({
         code: 'gips_sheet_decor',
         name: 'Gipskarton Knauf 9.5 mm (Figurali / 2 qavatli)',
@@ -226,9 +346,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Shiftda figurali quti va naqshlar yasash uchun gipskarton'
       });
 
-      // Profillar to'plami (UD/CD)
       const profilesTotal = Math.ceil(ceilingArea * 1.8);
-      const profileAvgPrice = Math.round(24000 * tierMultiplier);
+      const profileAvgPrice = getMaterialPrice('profile_cd_60', 26000);
       materials.push({
         code: 'profile_decor_set',
         name: 'Gipskarton profillari to\'plami (UD va CD)',
@@ -242,7 +361,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: profilesTotal * profileAvgPrice,
       });
 
-      const rate = rates['ceiling_gips_decor'] || 85000;
+      const rate = getLaborRate('ceiling_gips_decor', 85000);
       laborItems.push({
         id: 'labor_ceiling_gips_decor',
         name: 'Shiftda 2 qavatli figurali / naqshli gipskarton yasash',
@@ -256,7 +375,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 3. Natyajnoy shift
     else if (input.ceilingWork === 'stretch') {
-      const stretchPrice = Math.round(65000 * tierMultiplier);
+      const stretchPrice = getMaterialPrice('stretch_ceiling_full', 65000);
       materials.push({
         code: 'stretch_ceiling_full',
         name: 'Natyajnoy potolok (Matoviy/Satin, profillar bilan birga)',
@@ -271,7 +390,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Choksiz ekologik natyajnoy shift polotnosi va o\'rnatish profillari'
       });
 
-      const rate = rates['ceiling_stretch'] || 15000; // o'rnatish qo'shimcha xizmati
+      const rate = getLaborRate('ceiling_stretch', 65000);
       laborItems.push({
         id: 'labor_ceiling_stretch',
         name: 'Natyajnoy shift montaji va burchaklarni tekislash',
@@ -285,12 +404,13 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 4. Shiftni bo'yash (Valik yoki Kraskapult)
     if (input.ceilingWork === 'paint_roller' || input.ceilingWork === 'paint_spray') {
-      const ceilingPaintLiters = ceilingArea * 0.26; // 2 qatlam
+      const isSpray = input.ceilingWork === 'paint_spray';
+      const ceilingPaintLiters = ceilingArea * (isSpray ? 0.22 : 0.26);
       const paintPails = Math.ceil(ceilingPaintLiters / 15);
-      const paintPrice = Math.round(420000 * tierMultiplier);
+      const paintPrice = getMaterialPrice('ceiling_paint_white_15l', 380000);
       materials.push({
         code: 'ceiling_paint_white_15l',
-        name: 'Shift uchun super oq matoviy bo\'yoq (15 L)',
+        name: `Shift uchun super oq matoviy bo'yoq (15 L, ${isSpray ? 'Kraskapult' : 'Valik'})`,
         category: 'ceiling',
         unit: 'paqir',
         exactAmount: Number(ceilingPaintLiters.toFixed(1)),
@@ -301,10 +421,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: paintPails * paintPrice,
       });
 
-      // Shpaklyovka va astar
       const puttyKg = ceilingArea * 1.5;
       const puttyBags = Math.ceil(puttyKg / 25);
-      const puttyPrice = Math.round(48000 * tierMultiplier);
+      const puttyPrice = getMaterialPrice('putty_start_25kg', 48000);
       materials.push({
         code: 'ceiling_putty_25kg',
         name: 'Shift uchun silliq finish shpaklyovka (25 kg)',
@@ -318,12 +437,12 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: puttyBags * puttyPrice,
       });
 
-      const isSpray = input.ceilingWork === 'paint_spray';
-      const rate = rates[isSpray ? 'ceiling_spray' : 'ceiling_roller'] || (isSpray ? 35000 : 25000);
+      const rateKey = isSpray ? 'ceiling_paint_spray' : 'ceiling_paint_roller';
+      const rate = getLaborRate(rateKey, isSpray ? 35000 : 25000);
       laborItems.push({
         id: 'labor_ceiling_paint',
         name: isSpray 
-          ? 'Shiftni kraskapultda (purkash orqali) sifatli bo\'yash' 
+          ? 'Shiftni kraskapultda (purkash orqali) dog\'siz bo\'yash' 
           : 'Shiftni shpaklyovka qilish va valikda bo\'yash',
         category: 'ceiling',
         area: ceilingArea,
@@ -343,7 +462,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
       const thickness = input.plasterThicknessCm || 1.0;
       const plasterKg = netWallArea * 8.5 * thickness;
       const plasterBags = Math.ceil(plasterKg / 30);
-      const plasterPrice = Math.round(52000 * tierMultiplier);
+      const plasterPrice = getMaterialPrice('plaster_rotband_30kg', 52000);
 
       materials.push({
         code: 'plaster_rotband_30kg',
@@ -359,7 +478,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Devorlarni mayoq bo\'yicha tekislash uchun gipsli qorishma'
       });
 
-      const rate = rates['wall_plaster'] || 35000;
+      const rate = getLaborRate('wall_plaster', 35000);
       laborItems.push({
         id: 'labor_wall_plaster',
         name: 'Devorlarni mayoq bo\'yicha gipsli suvoq (Rotband) bilan tekislash',
@@ -374,7 +493,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
     // 2. Gruntovka (Astar)
     const primerLiters = netWallArea * 0.15 * (input.wallWork === 'tile' ? 1 : 2);
     const primerCans = Math.ceil(primerLiters / 10);
-    const primerPrice = Math.round(85000 * tierMultiplier);
+    const primerPrice = getMaterialPrice('primer_deep_10l', 85000);
     materials.push({
       code: 'primer_deep_10l',
       name: 'Chuqur singuvchi astar (Gruntovka, 10 L)',
@@ -390,10 +509,10 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 3. Devor: Bo'yoq (Valik yoki Kraskapultda purkash)
     if (input.wallWork === 'paint_roller' || input.wallWork === 'paint_spray' || input.wallWork === 'paint_standard') {
-      // Start shpaklyovka
+      const isSpray = input.wallWork === 'paint_spray';
       const startKg = netWallArea * 1.8;
       const startBags = Math.ceil(startKg / 25);
-      const startPrice = Math.round(48000 * tierMultiplier);
+      const startPrice = getMaterialPrice('putty_start_25kg', 48000);
       materials.push({
         code: 'putty_start_25kg',
         name: 'Start gipsli shpaklyovka (25 kg qop)',
@@ -407,11 +526,10 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: startBags * startPrice,
       });
 
-      // Pautinka (agar tanlangan bo'lsa)
       if (input.includePautinka) {
         const pautinkaM2 = netWallArea * 1.1;
         const pautinkaRolls = Math.ceil(pautinkaM2 / 50);
-        const pautinkaPrice = Math.round(240000 * tierMultiplier);
+        const pautinkaPrice = getMaterialPrice('pautinka_roll_50m2', 240000);
         materials.push({
           code: 'pautinka_roll_50m2',
           name: 'Stekloxolst Pautinka 40g/m² (+10% zapas)',
@@ -425,10 +543,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
           totalPrice: pautinkaRolls * pautinkaPrice,
         });
 
-        // Pautinka kleyi
         const glueKg = netWallArea * 0.25;
         const gluePails = Math.ceil(glueKg / 10);
-        const gluePrice = Math.round(110000 * tierMultiplier);
+        const gluePrice = getMaterialPrice('pautinka_glue_10kg', 110000);
         materials.push({
           code: 'pautinka_glue_10kg',
           name: 'Pautinka uchun tayyor maxsus kley (Oscar/Bostik, 10 kg)',
@@ -442,7 +559,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
           totalPrice: gluePails * gluePrice,
         });
 
-        const pautinkaRate = rates['wall_pautinka'] || 20000;
+        const pautinkaRate = getLaborRate('wall_pautinka', 20000);
         laborItems.push({
           id: 'labor_wall_pautinka',
           name: 'Stekloxolst (Pautinka) yopishtirish va qirqish',
@@ -457,7 +574,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
       // Finish shpaklyovka pasta
       const finishKg = netWallArea * 0.8;
       const finishPails = Math.ceil(finishKg / 28);
-      const finishPrice = Math.round(260000 * tierMultiplier);
+      const finishPrice = getMaterialPrice('putty_finish_pasta_28kg', 260000);
       materials.push({
         code: 'putty_finish_pasta_28kg',
         name: 'Super Finish tayyor shpaklyovka-pasta (28 kg)',
@@ -472,12 +589,12 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
       });
 
       // Emulsiya bo'yog'i devorga
-      const paintLiters = netWallArea * 0.28;
+      const paintLiters = netWallArea * (isSpray ? 0.24 : 0.28);
       const paintPails = Math.ceil(paintLiters / 15);
-      const paintPrice = Math.round(420000 * tierMultiplier);
+      const paintPrice = getMaterialPrice('paint_wall_15l', 420000);
       materials.push({
         code: 'paint_wall_15l',
-        name: 'Yuviladigan matoviy akril emulsiya bo\'yog\'i (15 L)',
+        name: `Yuviladigan matoviy akril emulsiya bo'yog'i (15 L, ${isSpray ? 'Kraskapult' : 'Valik'})`,
         category: 'paint',
         unit: 'paqir',
         exactAmount: Number(paintLiters.toFixed(1)),
@@ -488,8 +605,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: paintPails * paintPrice,
       });
 
-      // Shpaklyovka xizmati
-      const puttyRate = rates['wall_putty'] || 35000;
+      const puttyRate = getLaborRate('wall_putty', 30000);
       laborItems.push({
         id: 'labor_wall_putty',
         name: 'Devorlarni shpaklyovka qilish va silliqlash (Start + Finish)',
@@ -500,9 +616,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: Math.round(netWallArea * puttyRate),
       });
 
-      // Bo'yash xizmati (Valik vs Kraskapult)
-      const isSpray = input.wallWork === 'paint_spray';
-      const paintRate = rates[isSpray ? 'wall_spray' : 'wall_roller'] || (isSpray ? 35000 : 25000);
+      const rateKey = isSpray ? 'wall_paint_spray' : 'wall_paint_roller';
+      const paintRate = getLaborRate(rateKey, isSpray ? 40000 : 30000);
       laborItems.push({
         id: 'labor_wall_paint',
         name: isSpray 
@@ -518,9 +633,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 4. Devor: Oboy yopishtirish
     else if (input.wallWork === 'wallpaper') {
-      // 1 rulon 1.06m x 10m = 10.6 m2, 10% zapas
       const wallpaperRolls = Math.ceil((netWallArea * 1.10) / 10.6);
-      const rollPrice = Math.round(180000 * tierMultiplier);
+      const rollPrice = getMaterialPrice('wallpaper_vinil_roll', 180000);
       materials.push({
         code: 'wallpaper_vinil_roll',
         name: 'Vinil / Flizelin oboy (1.06 x 10 m, keng format)',
@@ -535,9 +649,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Sifatli yuviladigan relflik devor qog\'ozi'
       });
 
-      // Oboy kleyi (1 quti 5-6 rulonga)
       const glueBoxes = Math.ceil(wallpaperRolls / 5);
-      const glueBoxPrice = Math.round(45000 * tierMultiplier);
+      const glueBoxPrice = getMaterialPrice('wallpaper_glue_box', 45000);
       materials.push({
         code: 'wallpaper_glue_box',
         name: 'Maxsus flizelin oboy kleyi (Metylan/Kleo)',
@@ -551,10 +664,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: glueBoxes * glueBoxPrice,
       });
 
-      // Oboy tagiga devorni tekislash shpaklyovkasi
       const puttyKg = netWallArea * 1.2;
       const puttyBags = Math.ceil(puttyKg / 25);
-      const puttyPrice = Math.round(48000 * tierMultiplier);
+      const puttyPrice = getMaterialPrice('putty_start_25kg', 48000);
       materials.push({
         code: 'wallpaper_putty_base_25kg',
         name: 'Oboy osti uchun tekislovchi shpaklyovka (25 kg)',
@@ -568,8 +680,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: puttyBags * puttyPrice,
       });
 
-      // Usta: Oboy yopishtirish
-      const wallpaperRate = rates['wall_wallpaper'] || 30000;
+      const wallpaperRate = getLaborRate('wall_wallpaper', 30000);
       laborItems.push({
         id: 'labor_wall_wallpaper',
         name: 'Oboy yopishtirish (choklarni tekislash bilan)',
@@ -579,72 +690,42 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         ratePerM2: wallpaperRate,
         totalPrice: Math.round(netWallArea * wallpaperRate),
       });
-
-      // Usta: Oboy tagiga devor tayyorlash
-      const prepRate = rates['wall_wallpaper_prep'] || 25000;
-      laborItems.push({
-        id: 'labor_wall_wallpaper_prep',
-        name: 'Oboy ostini shpaklyovka va astar bilan tayyorlash',
-        category: 'wall',
-        area: netWallArea,
-        unitStr: 'm²',
-        ratePerM2: prepRate,
-        totalPrice: Math.round(netWallArea * prepRate),
-      });
     }
 
     // 5. Devor: Kafel / Keramogranit
     else if (input.wallWork === 'tile') {
-      const tileAreaExact = netWallArea * 1.10; // +10% kesishga
-      const tilePacks = Math.ceil(tileAreaExact / 1.44); // 1 pachka ~1.44m2
-      const tilePrice = Math.round(110000 * tierMultiplier);
-
+      const tileAreaExact = netWallArea * 1.10;
+      const tilePacks = Math.ceil(tileAreaExact / 1.44);
+      const tilePackPrice = getMaterialPrice('tile_wall_pack', 237600); // ~165 000 so'm/m2
       materials.push({
-        code: 'wall_tile_pack',
-        name: 'Devor kafel / plitkasi (+10% zapas)',
+        code: 'tile_wall_pack',
+        name: 'Devor uchun keramogranit / kafel (+10% zapas)',
         category: 'tile',
         unit: 'pachka',
         exactAmount: Number(tileAreaExact.toFixed(1)),
         exactUnitStr: `${tileAreaExact.toFixed(1)} m²`,
         packagesCount: tilePacks,
         packageSize: '1.44 m²',
-        unitPrice: Math.round(tilePrice * 1.44),
-        totalPrice: tilePacks * Math.round(tilePrice * 1.44),
+        unitPrice: tilePackPrice,
+        totalPrice: tilePacks * tilePackPrice,
       });
 
-      // Kafel kleyi (25kg qop = 5 m2)
-      const glueBags = Math.ceil(netWallArea / 5.0);
-      const gluePrice = Math.round(48000 * tierMultiplier);
+      const glueBags = Math.ceil((netWallArea * 4.5) / 25);
+      const gluePrice = getMaterialPrice('tile_glue_c2_25kg', 55000);
       materials.push({
-        code: 'tile_glue_25kg',
-        name: 'Plitka va kafel yelimi (Knauf/Weber, 25 kg)',
+        code: 'tile_glue_c2_25kg',
+        name: 'Kafel kleyi C2 kuchaytirilgan elastik (25 kg)',
         category: 'tile',
         unit: 'qop',
-        exactAmount: Number((netWallArea / 5.0).toFixed(1)),
-        exactUnitStr: `${(netWallArea / 5.0).toFixed(1)} qop`,
+        exactAmount: Number((netWallArea * 4.5).toFixed(1)),
+        exactUnitStr: `${(netWallArea * 4.5).toFixed(1)} kg`,
         packagesCount: glueBags,
         packageSize: '25 kg',
         unitPrice: gluePrice,
         totalPrice: glueBags * gluePrice,
       });
 
-      // Choklar uchun zatirka (fuga)
-      const groutPacks = Math.ceil(netWallArea / 15.0);
-      const groutPrice = Math.round(32000 * tierMultiplier);
-      materials.push({
-        code: 'tile_grout_2kg',
-        name: 'Suv o\'tkazmaydigan chok qorishmasi (Zatirka / Fuga, 2 kg)',
-        category: 'tile',
-        unit: 'dona',
-        exactAmount: groutPacks,
-        exactUnitStr: `${groutPacks} dona`,
-        packagesCount: groutPacks,
-        packageSize: '2 kg',
-        unitPrice: groutPrice,
-        totalPrice: groutPacks * groutPrice,
-      });
-
-      const tileRate = rates['wall_tile'] || 90000;
+      const tileRate = getLaborRate('wall_tile', 90000);
       laborItems.push({
         id: 'labor_wall_tile',
         name: 'Devorga kafel / plitka yotqizish va zatirka qilish',
@@ -663,9 +744,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
   if ((input.floorWork !== 'none' || input.includeScreed || input.includeSelfLeveling) && floorArea > 0) {
     // 1. Pol steshkasi (Beton styajka, 5 sm)
     if (input.includeScreed) {
-      // 5 sm styajka uchun tsement M400 (1 qop 50kg ~1.5 m2 ga)
       const cementBags = Math.ceil(floorArea / 1.5);
-      const cementPrice = Math.round(45000 * tierMultiplier);
+      const cementPrice = getMaterialPrice('cement_m400_50kg', 45000);
       materials.push({
         code: 'cement_m400_50kg',
         name: 'Tsement M400 (Pol steshkasi uchun, 50 kg)',
@@ -680,7 +760,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Polni mustahkam tsement-qum qorishmasi bilan tekislash'
       });
 
-      const rate = rates['floor_screed'] || 35000;
+      const rate = getLaborRate('floor_screed', 35000);
       laborItems.push({
         id: 'labor_floor_screed',
         name: 'Pol steshkasi (Beton quyish va mayoq bo\'yicha tekislash, 5 sm)',
@@ -694,8 +774,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 2. Nalivnoy pol (Samonivelir tekislash, 3 mm)
     if (input.includeSelfLeveling) {
-      const selfLevelBags = Math.ceil(floorArea / 5.0); // 1 qop 25kg = 5 m2
-      const selfLevelPrice = Math.round(65000 * tierMultiplier);
+      const selfLevelBags = Math.ceil(floorArea / 5.0);
+      const selfLevelPrice = getMaterialPrice('self_leveling_25kg', 65000);
       materials.push({
         code: 'self_leveling_25kg',
         name: 'O\'zi tekislanuvchi nalivnoy pol qorishmasi (25 kg)',
@@ -709,7 +789,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: selfLevelBags * selfLevelPrice,
       });
 
-      const rate = rates['floor_self_leveling'] || 20000;
+      const rate = getLaborRate('floor_self_leveling', 20000);
       laborItems.push({
         id: 'labor_floor_self_leveling',
         name: 'Nalivnoy pol quyish (3 mm silliq yakuniy qatlam)',
@@ -723,9 +803,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 3. Pol qoplamasi: Laminat
     if (input.floorWork === 'laminate') {
-      const laminateAreaExact = floorArea * 1.07; // +7% zapas
-      const laminatePacks = Math.ceil(laminateAreaExact / 2.13); // 1 pachka ~2.13 m2
-      const laminateM2Price = Math.round(120000 * tierMultiplier);
+      const laminateAreaExact = floorArea * 1.07;
+      const laminatePacks = Math.ceil(laminateAreaExact / 2.13);
+      const laminatePackPrice = getMaterialPrice('laminate_33_pack', 255000);
       materials.push({
         code: 'laminate_33_pack',
         name: 'Laminat 33-klass namlikka chidamli (+7% zapas)',
@@ -735,13 +815,13 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         exactUnitStr: `${laminateAreaExact.toFixed(1)} m²`,
         packagesCount: laminatePacks,
         packageSize: '2.13 m²',
-        unitPrice: Math.round(laminateM2Price * 2.13),
-        totalPrice: laminatePacks * Math.round(laminateM2Price * 2.13),
+        unitPrice: laminatePackPrice,
+        totalPrice: laminatePacks * laminatePackPrice,
       });
 
-      // Podlojka (3 mm penopolistirol)
+      // Podlojka
       const underlayRolls = Math.ceil(floorArea / 10.0);
-      const underlayPrice = Math.round(45000 * tierMultiplier);
+      const underlayPrice = getMaterialPrice('underlay_roll_10m2', 45000);
       materials.push({
         code: 'underlay_roll_10m2',
         name: 'Laminat osti podlojkasi (3 mm penopolistirol, 10 m²)',
@@ -755,9 +835,9 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: underlayRolls * underlayPrice,
       });
 
-      // Plintus (2.5 metrli PVX)
+      // Plintus
       const plinthPcs = Math.ceil(plinthLength / 2.5);
-      const plinthPrice = Math.round(22000 * tierMultiplier);
+      const plinthPrice = getMaterialPrice('plinth_pvc_2_5m', 22000);
       materials.push({
         code: 'plinth_pvc_2_5m',
         name: 'PVX rezinali pol plintusi va burchaklar to\'plami',
@@ -771,7 +851,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: plinthPcs * plinthPrice,
       });
 
-      const rate = rates['floor_laminate'] || 25000;
+      const rate = getLaborRate('floor_laminate', 25000);
       laborItems.push({
         id: 'labor_floor_laminate',
         name: 'Laminat yotqizish va plintuslarni o\'rnatish',
@@ -785,8 +865,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
 
     // 4. Pol qoplamasi: Parket / Inzhenernaya doska
     else if (input.floorWork === 'parquet') {
-      const parquetAreaExact = floorArea * 1.10; // +10% zapas
-      const parquetM2Price = Math.round(280000 * tierMultiplier);
+      const parquetAreaExact = floorArea * 1.10;
+      const parquetM2Price = getMaterialPrice('parquet_board_m2', 280000);
       materials.push({
         code: 'parquet_board_m2',
         name: 'Tabiiy parket / Inzhenernaya doska (+10% zapas)',
@@ -801,9 +881,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         description: 'Sifatli tabiiy eman/yong\'oq qoplamali parket taxtasi'
       });
 
-      // 2-komponentli parket yelimi (14 kg = 10-12 m2)
       const gluePails = Math.ceil(floorArea / 11.0);
-      const gluePrice = Math.round(420000 * tierMultiplier);
+      const gluePrice = getMaterialPrice('parquet_glue_14kg', 420000);
       materials.push({
         code: 'parquet_glue_14kg',
         name: 'Poliuretan 2-komponentli parket yelimi (14 kg)',
@@ -817,9 +896,8 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: gluePails * gluePrice,
       });
 
-      // Yog'och plintus
       const plinthPcs = Math.ceil(plinthLength / 2.4);
-      const plinthPrice = Math.round(45000 * tierMultiplier);
+      const plinthPrice = getMaterialPrice('plinth_wood_2_4m', 45000);
       materials.push({
         code: 'plinth_wood_2_4m',
         name: 'Yog\'och / MDF shponli parket plintusi (2.4 m)',
@@ -833,7 +911,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: plinthPcs * plinthPrice,
       });
 
-      const rate = rates['floor_parquet'] || 85000;
+      const rate = getLaborRate('floor_parquet', 85000);
       laborItems.push({
         id: 'labor_floor_parquet',
         name: 'Parket yotqizish, yelimlash va plintus o\'rnatish',
@@ -849,10 +927,10 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
     else if (input.floorWork === 'tile') {
       const tileAreaExact = floorArea * 1.10;
       const tilePacks = Math.ceil(tileAreaExact / 1.44);
-      const tileM2Price = Math.round(135000 * tierMultiplier);
+      const tilePackPrice = getMaterialPrice('tile_floor_pack', 195000); // ~135 000 so'm/m2
 
       materials.push({
-        code: 'floor_tile_pack',
+        code: 'tile_floor_pack',
         name: 'Pol uchun keramogranit / kafel (+10% zapas)',
         category: 'floor',
         unit: 'pachka',
@@ -860,13 +938,12 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         exactUnitStr: `${tileAreaExact.toFixed(1)} m²`,
         packagesCount: tilePacks,
         packageSize: '1.44 m²',
-        unitPrice: Math.round(tileM2Price * 1.44),
-        totalPrice: tilePacks * Math.round(tileM2Price * 1.44),
+        unitPrice: tilePackPrice,
+        totalPrice: tilePacks * tilePackPrice,
       });
 
-      // Elastik kafel kleyi
       const glueBags = Math.ceil(floorArea / 4.5);
-      const gluePrice = Math.round(55000 * tierMultiplier);
+      const gluePrice = getMaterialPrice('tile_glue_c2_25kg', 55000);
       materials.push({
         code: 'floor_tile_glue_25kg',
         name: 'Pol uchun kuchaytirilgan elastik kafel kleyi (25 kg)',
@@ -880,7 +957,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: glueBags * gluePrice,
       });
 
-      const tileRate = rates['floor_tile'] || 95000;
+      const tileRate = getLaborRate('floor_tile', 95000);
       laborItems.push({
         id: 'labor_floor_tile',
         name: 'Polga keramogranit / kafel yotqizish va zatirka',
