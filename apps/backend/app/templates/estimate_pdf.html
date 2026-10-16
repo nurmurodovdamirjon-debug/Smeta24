@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smeta24 Rasmiy Smeta #{{ estimate_number }}</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    body {
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a;
+      margin: 0;
+      padding: 0;
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 3px solid #f59e0b;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .master-brand h1 {
+      margin: 0;
+      font-size: 20px;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .master-brand p {
+      margin: 3px 0 0;
+      color: #475569;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+    .doc-meta {
+      text-align: right;
+      background: #f8fafc;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .doc-meta .badge {
+      background: #f59e0b;
+      color: #0f172a;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      display: inline-block;
+    }
+    .geometry-box {
+      display: flex;
+      justify-content: space-between;
+      background: #f1f5f9;
+      padding: 10px 14px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      font-weight: 600;
+      font-size: 11px;
+    }
+    h3 {
+      margin: 12px 0 6px;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #1e293b;
+      border-left: 4px solid #f59e0b;
+      padding-left: 8px;
+      letter-spacing: 0.3px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    th {
+      background: #0f172a;
+      color: #ffffff;
+      text-align: left;
+      padding: 7px 8px;
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+    td {
+      padding: 7px 8px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 11px;
+    }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .text-right { text-align: right; }
+    .font-bold { font-weight: 700; }
+    .summary-card {
+      margin-top: 10px;
+      border: 2px solid #0f172a;
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #fffbeb;
+    }
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+    .summary-total {
+      display: flex;
+      justify-content: space-between;
+      padding-top: 8px;
+      margin-top: 6px;
+      border-top: 2px dashed #f59e0b;
+      font-size: 15px;
+      font-weight: 900;
+      color: #0f172a;
+    }
+    .footer {
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. USTA BRENDINGI VA HUJJAT RAQAMI -->
+  <div class="header">
+    <div class="master-brand">
+      <h1>{{ master_brand_name or 'Smeta24 Professional' }}</h1>
+      <p>📞 Mas'ul usta / prorab: {{ master_phone or '+998 -- --- -- --' }}</p>
+    </div>
+    <div class="doc-meta">
+      <span class="badge">RASMIY SMETA #{{ estimate_number }}</span>
+      <p style="margin: 4px 0 0;">Sana: {{ created_date }}</p>
+      <p style="margin: 2px 0 0;">Obyekt / Xona: <strong>{{ room_name }}</strong></p>
+    </div>
+  </div>
+
+  <!-- 2. OBYEKT GEOMETRIYASI -->
+  <div class="geometry-box">
+    <span>Uzunligi: {{ length }} m</span>
+    <span>Eni: {{ width }} m</span>
+    <span>Balandligi: {{ height }} m</span>
+    <span>Sof devor: {{ net_wall_area }} m²</span>
+    <span>Shift: {{ ceiling_area }} m²</span>
+    <span style="color:#d97706;">JAMI YUZA: {{ total_area }} m²</span>
+  </div>
+
+  <!-- 3. KERAKLI MATERIALLAR JADVALI -->
+  <h3>1. Talab etiladigan qurilish materiallari</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25px;">#</th>
+        <th>Material nomi va qadoq turi</th>
+        <th>Sof me'yor</th>
+        <th class="text-right">Qadoq soni</th>
+        <th class="text-right">O'rtacha narxi</th>
+        <th class="text-right">Jami summa</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in materials %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td class="font-bold">{{ item.name }}</td>
+        <td>{{ item.exact }}</td>
+        <td class="text-right font-bold">{{ item.packages }} {{ item.unit }}</td>
+        <td class="text-right">{{ item.price_formatted }}</td>
+        <td class="text-right font-bold">{{ item.total_formatted }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- 4. USTA ISH HAQI JADVALI -->
+  {% if labor_items and labor_items|length > 0 %}
+  <h3>2. Bajariladigan ishlar va usta xizmat haqi</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25px;">#</th>
+        <th>Ish bosqichi nomi</th>
+        <th class="text-right">Hajmi (m²)</th>
+        <th class="text-right">1 m² narxi</th>
+        <th class="text-right">Jami ish haqi</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for work in labor_items %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ work.name }}</td>
+        <td class="text-right">{{ work.area }} m²</td>
+        <td class="text-right">{{ work.rate_formatted }}</td>
+        <td class="text-right font-bold">{{ work.total_formatted }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- 5. UMUMIY XULOSA -->
+  <div class="summary-card">
+    <div class="summary-row">
+      <span>Materiallar uchun taxminiy budjet:</span>
+      <strong>{{ materials_total_formatted }}</strong>
+    </div>
+    {% if labor_total > 0 %}
+    <div class="summary-row">
+      <span>Usta xizmat haqi jami:</span>
+      <strong>{{ labor_total_formatted }}</strong>
+    </div>
+    {% endif %}
+    <div class="summary-total">
+      <span>UMUMIY LOYIHA BUDJETI:</span>
+      <span>{{ grand_total_formatted }}</span>
+    </div>
+  </div>
+
+  <!-- 6. VIRUSLI MARKETING FOOTER -->
+  <div class="footer">
+    <div>
+      <strong>Smeta24 (@Smeta24Bot)</strong> — Dastur muallifi: <strong>Nurmurodov Damirjon</strong>.<br/>
+      Telegram orqali <strong>@Smeta24Bot</strong> ga kiring va 1 daqiqada o'z uyingiz smetasini bepul hisoblang!
+    </div>
+    <div style="text-align:right; font-weight:bold; color:#0f172a;">
+      t.me/Smeta24Bot
+    </div>
+  </div>
+
+</body>
+</html>
