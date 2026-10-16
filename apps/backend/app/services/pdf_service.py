@@ -26,10 +26,14 @@ def generate_estimate_pdf(html_content: str, output_path: str) -> str:
             f.write(html_content)
         return fallback_html_path
 
-def generate_estimate_pdf_bytes(html_content: str) -> bytes:
+def generate_estimate_pdf_bytes(html_content) -> bytes:
     """
     HTML shablonidan xotirada (RAM) to'g'ridan-to'g'ri PDF baytlarini yaratadi.
+    Agar dict uzatilsa, avval render_estimate_html orqali HTML satriga aylantiriladi.
     """
+    if isinstance(html_content, dict):
+        html_content = render_estimate_html(html_content)
+
     try:
         from weasyprint import HTML
         return HTML(string=html_content).write_pdf()
