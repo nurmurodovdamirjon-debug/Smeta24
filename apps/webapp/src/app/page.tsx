@@ -408,7 +408,7 @@ export default function Smeta24MiniApp() {
       });
 
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (res.ok && (data.ok || data.success)) {
         triggerNotificationHaptic("success");
         setPdfStatusMsg("✅ PDF-smeta Telegram xabaringizga yuborildi! Chatga o'tib ko'rishingiz mumkin.");
         setTimeout(() => {
@@ -416,7 +416,7 @@ export default function Smeta24MiniApp() {
           setPdfStatusMsg("");
         }, 3000);
       } else {
-        throw new Error(data.detail || "Serverdan xatolik qaytdi");
+        throw new Error(data.detail || data.message || "Serverdan xatolik qaytdi");
       }
     } catch (err: any) {
       console.error("PDF yuborishda xato:", err);

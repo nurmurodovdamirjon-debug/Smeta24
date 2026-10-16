@@ -140,7 +140,7 @@ async def send_telegram_pdf(payload: SendTelegramPdfRequest):
             caption=caption,
             parse_mode="HTML"
         )
-        return {"ok": True, "message": "PDF muvaffaqiyatli Telegram chatga yuborildi!"}
+        return {"ok": True, "success": True, "message": "PDF muvaffaqiyatli Telegram chatga yuborildi!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Telegramga yuborishda xatolik: {str(e)}")
     finally:
