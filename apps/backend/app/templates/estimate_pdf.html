@@ -210,7 +210,7 @@
       <span>Materiallar uchun taxminiy budjet:</span>
       <strong>{{ materials_total_formatted }}</strong>
     </div>
-    {% if labor_total > 0 %}
+    {% if labor_items and labor_items|length > 0 %}
     <div class="summary-row">
       <span>Usta xizmat haqi jami:</span>
       <strong>{{ labor_total_formatted }}</strong>

@@ -305,10 +305,10 @@ export default function Smeta24MiniApp() {
       } else {
         throw new Error(data.detail || "Serverdan xatolik qaytdi");
       }
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error("PDF yuborishda xato:", err);
       triggerNotificationHaptic("error");
-      setPdfStatusMsg("❌ Yuborishda xatolik yuz berdi. Qayta urinib ko'ring.");
+      setPdfStatusMsg(`❌ ${err?.message || "Yuborishda xatolik yuz berdi. Qayta urinib ko'ring."}`);
     } finally {
       setIsSendingPdf(false);
     }
