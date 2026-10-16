@@ -19,9 +19,20 @@ def generate_estimate_pdf(html_content: str, output_path: str) -> str:
         from weasyprint import HTML
         HTML(string=html_content).write_pdf(output_path)
         return output_path
-    except (ImportError, OSError):
-        # Fallback to HTML if WeasyPrint binary dependencies aren't compiled yet on host
+    except Exception as e:
+        print(f"WeasyPrint PDF generation fallback to HTML: {e}")
         fallback_html_path = output_path.replace(".pdf", ".html")
         with open(fallback_html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
         return fallback_html_path
+
+def generate_estimate_pdf_bytes(html_content: str) -> bytes:
+    """
+    HTML shablonidan xotirada (RAM) to'g'ridan-to'g'ri PDF baytlarini yaratadi.
+    """
+    try:
+        from weasyprint import HTML
+        return HTML(string=html_content).write_pdf()
+    except Exception as e:
+        print(f"WeasyPrint bytes error, fallback to HTML bytes: {e}")
+        return html_content.encode("utf-8")

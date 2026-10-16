@@ -31,6 +31,9 @@ import {
   X,
   CreditCard,
   Plus,
+  Loader2,
+  Printer,
+  Send,
 } from "lucide-react";
 
 export default function Smeta24MiniApp() {
@@ -73,6 +76,8 @@ export default function Smeta24MiniApp() {
   const [leadSubmitted, setLeadSubmitted] = useState<boolean>(false);
   const [clientPhone, setClientPhone] = useState<string>("+998 9");
   const [clientRegion, setClientRegion] = useState<string>("Toshkent shahri");
+  const [isSendingPdf, setIsSendingPdf] = useState<boolean>(false);
+  const [pdfStatusMsg, setPdfStatusMsg] = useState<string>("");
 
   // Lead-birja holati
   const [leadsList, setLeadsList] = useState([
@@ -229,6 +234,90 @@ export default function Smeta24MiniApp() {
       triggerNotificationHaptic("warning");
       setShowTopupModal(true);
     }
+  };
+
+  // PDF faylni Telegram bot orqali chatga yuborish
+  const handleSendPdfToTelegram = async () => {
+    setIsSendingPdf(true);
+    setPdfStatusMsg("");
+    triggerHaptic("medium");
+
+    // Telegram chat_id ni aniqlash
+    const chatId =
+      tgUser?.id ||
+      (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
+
+    if (!chatId) {
+      setIsSendingPdf(false);
+      alert(
+        "Telegram Chat ID aniqlanmadi. Iltimos, Mini App'ni @Smeta24Bot orqali oching yoki 'Chop etish / Qurilmaga saqlash' tugmasidan foydalaning!"
+      );
+      return;
+    }
+
+    try {
+      const payload = {
+        chat_id: chatId,
+        room_name: roomName,
+        length: length,
+        width: width,
+        height: height,
+        total_area: estimate.geometry.totalWorkArea,
+        brand_name: brandName,
+        master_phone: masterPhone,
+        materials: estimate.materials.map((m) => ({
+          name: m.name,
+          exact: `${m.exactAmount} ${m.unit}`,
+          packages: `${m.packagesCount} ${m.unit}`,
+          price_formatted: formatUZS(m.unitPrice),
+          total_formatted: formatUZS(m.totalPrice),
+        })),
+        labor_items: isMasterMode
+          ? estimate.laborItems.map((l) => ({
+              name: l.name,
+              area: `${estimate.geometry.totalWorkArea} m²`,
+              rate_formatted: formatUZS(l.ratePerM2),
+              total_formatted: formatUZS(l.totalPrice),
+            }))
+          : [],
+        materials_total: formatUZS(estimate.materialsTotal),
+        labor_total: isMasterMode ? formatUZS(estimate.laborTotal) : "0 so'm",
+        grand_total: formatUZS(estimate.grandTotal),
+      };
+
+      const res = await fetch(
+        "https://smeta24-backend.onrender.com/api/v1/estimates/send-telegram-pdf",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        triggerNotificationHaptic("success");
+        setPdfStatusMsg("✅ PDF-smeta Telegram xabaringizga yuborildi! Chatga o'tib ko'rishingiz mumkin.");
+        setTimeout(() => {
+          setShowPdfModal(false);
+          setPdfStatusMsg("");
+        }, 3000);
+      } else {
+        throw new Error(data.detail || "Serverdan xatolik qaytdi");
+      }
+    } catch (err: unknown) {
+      console.error("PDF yuborishda xato:", err);
+      triggerNotificationHaptic("error");
+      setPdfStatusMsg("❌ Yuborishda xatolik yuz berdi. Qayta urinib ko'ring.");
+    } finally {
+      setIsSendingPdf(false);
+    }
+  };
+
+  // PDF-ni brauzerda chop etish / yuklab olish
+  const handlePrintPdf = () => {
+    triggerHaptic("light");
+    window.print();
   };
 
   // Balans to'ldirish
@@ -1093,18 +1182,47 @@ export default function Smeta24MiniApp() {
               </div>
             </div>
 
+            {/* Status Xabari */}
+            {pdfStatusMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold text-center leading-snug animate-in fade-in ${
+                  pdfStatusMsg.startsWith("✅")
+                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/40"
+                    : "bg-rose-500/15 text-rose-400 border border-rose-500/40"
+                }`}
+              >
+                {pdfStatusMsg}
+              </div>
+            )}
+
             {/* Tugmalar */}
             <div className="space-y-2">
               <button
-                onClick={() => {
-                  triggerNotificationHaptic("success");
-                  alert("PDF fayli @Smeta24Bot orqali Telegram xabaringizga yuborildi! ✅");
-                  setShowPdfModal(false);
-                }}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                type="button"
+                disabled={isSendingPdf}
+                onClick={handleSendPdfToTelegram}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-[0.98]"
               >
-                <Download className="w-4 h-4" />
-                <span>PDF-ni Telegram Chatga yuborish</span>
+                {isSendingPdf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>PDF tayyorlanib, chatga yuborilmoqda...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 text-slate-950" />
+                    <span>📨 PDF-ni Telegram Chatga yuborish</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintPdf}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition active:scale-[0.98]"
+              >
+                <Printer className="w-3.5 h-3.5 text-amber-400" />
+                <span>🖨️ Chop etish / Qurilmaga saqlash</span>
               </button>
             </div>
           </div>
