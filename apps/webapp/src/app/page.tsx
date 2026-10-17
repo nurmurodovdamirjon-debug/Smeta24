@@ -41,6 +41,9 @@ import {
   Store,
   Wrench,
   Check,
+  Phone,
+  RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 
 export default function Smeta24MiniApp() {
@@ -127,7 +130,7 @@ export default function Smeta24MiniApp() {
   const [saveToast, setSaveToast] = useState<string>("");
 
   // Lead-birja holati
-  const [leadsList, setLeadsList] = useState([
+  const [leadsList, setLeadsList] = useState<any[]>([
     {
       id: "LD-9821",
       title: "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq",
@@ -136,8 +139,9 @@ export default function Smeta24MiniApp() {
       date: "10 daqiqa oldin",
       region: "Toshkent shahri",
       price: 10000,
+      lead_type: "materials_order",
       isPurchased: false,
-      contact: "+998 90 847 32 11 (Farrux)",
+      contact: "+998 90 ••• •• 11 (Farrux)",
     },
     {
       id: "LD-9818",
@@ -147,8 +151,9 @@ export default function Smeta24MiniApp() {
       date: "35 daqiqa oldin",
       region: "Toshkent shahri",
       price: 10000,
+      lead_type: "need_master",
       isPurchased: false,
-      contact: "+998 97 122 89 00 (Sanjar)",
+      contact: "+998 97 ••• •• 00 (Sanjar)",
     },
     {
       id: "LD-9804",
@@ -158,10 +163,17 @@ export default function Smeta24MiniApp() {
       date: "2 soat oldin",
       region: "Samarqand",
       price: 15000,
+      lead_type: "materials_order",
       isPurchased: false,
-      contact: "+998 93 456 78 90 (Jamshid)",
+      contact: "+998 93 ••• •• 90 (Jamshid)",
     },
   ]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(false);
+  const [selectedLeadRegion, setSelectedLeadRegion] = useState<string>("Barchasi");
+  const [selectedLeadType, setSelectedLeadType] = useState<string>("Barchasi");
+  const [isSubmittingLead, setIsSubmittingLead] = useState<boolean>(false);
+  const [leadClientName, setLeadClientName] = useState<string>("");
+  const [leadOrderType, setLeadOrderType] = useState<string>("materials_order");
 
   // Init Telegram & localStorage dan saqlangan sozlamalarni yuklash
   useEffect(() => {
@@ -393,6 +405,19 @@ export default function Smeta24MiniApp() {
     materialPrices,
   ]);
 
+  // Lid-birja: Saralash va filtrlar
+  const filteredLeads = useMemo(() => {
+    return leadsList.filter((ld) => {
+      const matchRegion =
+        selectedLeadRegion === "Barchasi" || ld.region === selectedLeadRegion;
+      const matchType =
+        selectedLeadType === "Barchasi" ||
+        (selectedLeadType === "materials_order" && ld.lead_type === "materials_order") ||
+        (selectedLeadType === "need_master" && ld.lead_type === "need_master");
+      return matchRegion && matchType;
+    });
+  }, [leadsList, selectedLeadRegion, selectedLeadType]);
+
   // PDF sotib olish (Unlock)
   const handleUnlockPdf = () => {
     if (userBalance >= 5000) {
@@ -406,17 +431,135 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  // Lid sotib olish
-  const handleBuyLead = (leadId: string, price: number) => {
-    if (userBalance >= price) {
-      triggerNotificationHaptic("success");
-      setUserBalance((prev) => prev - price);
-      setLeadsList((prev) =>
-        prev.map((ld) => (ld.id === leadId ? { ...ld, isPurchased: true } : ld))
-      );
-    } else {
+  // Lid-birja: Serverdan yuklash
+  const fetchLeads = async () => {
+    try {
+      setIsLoadingLeads(true);
+      const backendUrl =
+        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const uid =
+        tgUser?.id ||
+        (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) ||
+        0;
+
+      const res = await fetch(`${backendUrl}/api/v1/leads?user_id=${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.leads && Array.isArray(data.leads)) {
+          setLeadsList(data.leads);
+        }
+      }
+    } catch (err) {
+      console.warn("Lidlarni serverdan yuklashda ogohlantirish:", err);
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "leads") {
+      fetchLeads();
+    }
+  }, [activeTab]);
+
+  // Lid sotib olish (Backend API orqali)
+  const handleBuyLead = async (leadId: string, price: number) => {
+    if (userBalance < price) {
       triggerNotificationHaptic("warning");
       setShowTopupModal(true);
+      return;
+    }
+
+    try {
+      triggerHaptic("medium");
+      const backendUrl =
+        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const uid =
+        tgUser?.id ||
+        (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) ||
+        12345678;
+
+      const res = await fetch(`${backendUrl}/api/v1/leads/${leadId}/buy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: uid }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === "purchased") {
+        triggerNotificationHaptic("success");
+        setUserBalance((prev) => Math.max(0, prev - price));
+        setLeadsList((prev) =>
+          prev.map((ld) =>
+            ld.id === leadId
+              ? {
+                  ...ld,
+                  isPurchased: true,
+                  contact: `${data.client_phone} (${data.client_name || "Mijoz"})`,
+                  phone_raw: data.client_phone,
+                  client_name: data.client_name,
+                }
+              : ld
+          )
+        );
+        setSaveToast(`✅ Lid ochildi! Mijoz telefoni: ${data.client_phone}`);
+        setTimeout(() => setSaveToast(""), 4000);
+      } else {
+        throw new Error(data.detail || "Lidni sotib olishda xatolik yuz berdi");
+      }
+    } catch (err: any) {
+      console.error("Lid sotib olishda xato:", err);
+      triggerNotificationHaptic("error");
+      setSaveToast(`❌ ${err?.message || "Xatolik yuz berdi"}`);
+      setTimeout(() => setSaveToast(""), 4000);
+    }
+  };
+
+  // Yangi lid (buyurtma) yaratish va birjaga e'lon qilish
+  const handleCreateLead = async () => {
+    const rawDigits = clientPhone.replace(/\D/g, "");
+    if (rawDigits.length < 9) {
+      triggerNotificationHaptic("warning");
+      alert("Iltimos, to'liq telefon raqamingizni kiriting!");
+      return;
+    }
+
+    try {
+      setIsSubmittingLead(true);
+      triggerHaptic("medium");
+      const backendUrl =
+        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+
+      const res = await fetch(`${backendUrl}/api/v1/leads/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_phone: clientPhone,
+          client_name: leadClientName || tgUser?.first_name || "Mijoz",
+          region: clientRegion,
+          room_name: roomName,
+          area: estimate.geometry.totalWorkArea,
+          materials_total: estimate.materialsTotal,
+          labor_total: estimate.laborTotal,
+          grand_total: estimate.grandTotal,
+          lead_type: leadOrderType,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === "published") {
+        triggerNotificationHaptic("success");
+        setLeadSubmitted(true);
+        fetchLeads();
+      } else {
+        throw new Error(data.detail || "Buyurtmani yuborishda xatolik yuz berdi");
+      }
+    } catch (err: any) {
+      console.error("Lid yaratishda xato:", err);
+      triggerNotificationHaptic("error");
+      alert(err?.message || "Server bilan bog'lanishda xatolik");
+    } finally {
+      setIsSubmittingLead(false);
     }
   };
 
@@ -1497,59 +1640,192 @@ export default function Smeta24MiniApp() {
         {/* LEADS TAB */}
         {activeTab === "leads" && (
           <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-amber-400" />
-                <h2 className="font-bold text-sm text-white">Buyurtmalar Birjasi (Lidlar)</h2>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Mijozlarimiz tomonidan to&apos;g&apos;ridan-to&apos;g&apos;ri qoldirilgan tekshirilgan ta&apos;mir buyurtmalari.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {leadsList.map((lead) => (
-                <div
-                  key={lead.id}
-                  className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-md"
-                >
-                  <div className="flex justify-between items-start">
-                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                      {lead.region}
-                    </span>
-                    <span className="text-[10px] text-slate-500">{lead.date}</span>
-                  </div>
-
-                  <h3 className="font-bold text-xs text-white leading-snug">{lead.title}</h3>
-
-                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950 p-2 rounded-xl border border-slate-800/60">
-                    <div>
-                      <span className="text-slate-400 block text-[9.5px]">Maydon:</span>
-                      <span className="font-bold text-slate-200">{lead.area}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[9.5px]">Mo&apos;ljal budjet:</span>
-                      <span className="font-bold text-emerald-400">{lead.budget}</span>
-                    </div>
-                  </div>
-
-                  {lead.isPurchased ? (
-                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-2.5 text-center text-xs text-emerald-400 font-bold flex items-center justify-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>{lead.contact}</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleBuyLead(lead.id, lead.price)}
-                      className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs py-2 rounded-xl border border-amber-500/30 flex items-center justify-center gap-1.5 transition active:scale-95"
-                    >
-                      <Unlock className="w-3.5 h-3.5" />
-                      <span>🔓 Kontaktni ochish ({lead.price.toLocaleString("ru-RU")} so&apos;m)</span>
-                    </button>
-                  )}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-amber-400" />
+                  <h2 className="font-bold text-sm text-white">Buyurtmalar Birjasi (Lidlar)</h2>
+                  <span className="bg-amber-500/15 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                    {filteredLeads.length} ta faol
+                  </span>
                 </div>
-              ))}
+                <button
+                  type="button"
+                  onClick={fetchLeads}
+                  disabled={isLoadingLeads}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95 border border-slate-700/60"
+                  title="Yangilash"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isLoadingLeads ? "animate-spin text-amber-400" : ""}`} />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Mijozlar tomonidan qoldirilgan tekshirilgan ta&apos;mir va material buyurtmalari.
+              </p>
+
+              {/* Viloyat Filtrlari */}
+              <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                  {["Barchasi", "Toshkent shahri", "Samarqand", "Farg'ona"].map((reg) => (
+                    <button
+                      key={reg}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setSelectedLeadRegion(reg);
+                      }}
+                      className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
+                        selectedLeadRegion === reg
+                          ? "bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/30"
+                          : "bg-slate-800/80 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      {reg}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Turi Filtrlari */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setSelectedLeadType("Barchasi");
+                    }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
+                      selectedLeadType === "Barchasi"
+                        ? "bg-slate-700 text-white border border-slate-600"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Barcha turlar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setSelectedLeadType("materials_order");
+                    }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
+                      selectedLeadType === "materials_order"
+                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/40"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    📦 Materiallar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setSelectedLeadType("need_master");
+                    }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
+                      selectedLeadType === "need_master"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🔨 Usta kerak
+                  </button>
+                </div>
+              </div>
             </div>
+
+            {/* Leads list */}
+            {isLoadingLeads && leadsList.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-400 mx-auto" />
+                <p className="text-xs text-slate-400">Birjadagi yangi buyurtmalar yuklanmoqda...</p>
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
+                <Building2 className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-xs font-semibold text-slate-300">Ushbu filtr bo&apos;yicha buyurtmalar topilmadi</p>
+                <p className="text-[11px] text-slate-500">Boshqa viloyatni tanlang yoki yuqoridagi yangilash tugmasini bosing</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLeads.map((lead) => (
+                  <div
+                    key={lead.id}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-md"
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          {lead.region}
+                        </span>
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${
+                          lead.lead_type === "materials_order"
+                            ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        }`}>
+                          {lead.lead_type === "materials_order" ? "📦 Ulgurji material" : "🔨 Usta kerak"}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 whitespace-nowrap">{lead.date}</span>
+                    </div>
+
+                    <h3 className="font-bold text-xs text-white leading-snug">{lead.title}</h3>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950 p-2 rounded-xl border border-slate-800/60">
+                      <div>
+                        <span className="text-slate-400 block text-[9.5px]">Maydon:</span>
+                        <span className="font-bold text-slate-200">{lead.area}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[9.5px]">Mo&apos;ljal budjet:</span>
+                        <span className="font-bold text-emerald-400">{lead.budget}</span>
+                      </div>
+                    </div>
+
+                    {lead.isPurchased ? (
+                      <div className="space-y-2">
+                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-2.5 text-xs text-emerald-400 font-bold flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span>{lead.contact}</span>
+                          </div>
+                          <span className="text-[9.5px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-semibold">
+                            Ochilgan
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <a
+                            href={`tel:${lead.phone_raw || lead.contact.replace(/[^\d+]/g, "")}`}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 text-center"
+                          >
+                            <Phone className="w-3.5 h-3.5 text-slate-950" />
+                            <span>Qo&apos;ng&apos;iroq qilish</span>
+                          </a>
+                          <a
+                            href={`https://t.me/${lead.phone_raw ? lead.phone_raw.replace(/[^\d]/g, "") : ""}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-95 text-center"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Telegram</span>
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleBuyLead(lead.id, lead.price)}
+                        className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs py-2.5 rounded-xl border border-amber-500/30 flex items-center justify-center gap-1.5 transition active:scale-95"
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        <span>🔓 Kontaktni ochish ({lead.price.toLocaleString("ru-RU")} so&apos;m)</span>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1774,15 +2050,62 @@ export default function Smeta24MiniApp() {
             ) : (
               <div className="space-y-3">
                 <p className="text-xs text-slate-400">
-                  Smeta24 hamkor ulgurji omborlaridan materiallarni do&apos;kon narxidan 10-15% arzonroq va bepul yetkazib berish bilan oling:
+                  Ushbu buyurtmani birjaga e&apos;lon qiling. Hamkor do&apos;konlar va tasdiqlangan ustalar to&apos;g&apos;ridan-to&apos;g&apos;ri siz bilan bog&apos;lanadi:
                 </p>
 
+                {/* Buyurtma turi */}
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Telefon raqamingiz</label>
+                  <label className="text-[10px] text-slate-400 block mb-1">Buyurtma turi</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setLeadOrderType("materials_order");
+                      }}
+                      className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${
+                        leadOrderType === "materials_order"
+                          ? "bg-amber-500 text-slate-950 border-amber-400"
+                          : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      📦 Materiallar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setLeadOrderType("need_master");
+                      }}
+                      className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${
+                        leadOrderType === "need_master"
+                          ? "bg-amber-500 text-slate-950 border-amber-400"
+                          : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      🔨 Usta chaqirish
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Ismingiz (ixtiyoriy)</label>
+                  <input
+                    type="text"
+                    placeholder="Masalan: Sardor"
+                    value={leadClientName}
+                    onChange={(e) => setLeadClientName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Telefon raqamingiz *</label>
                   <input
                     type="text"
                     value={clientPhone}
                     onChange={(e) => setClientPhone(e.target.value)}
+                    placeholder="+998 90 123 45 67"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none font-bold"
                   />
                 </div>
@@ -1804,20 +2127,27 @@ export default function Smeta24MiniApp() {
                   </select>
                 </div>
 
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
-                  <span className="text-slate-400 block text-[10px]">Taxminiy mahsulotlar summasi:</span>
-                  <span className="font-bold text-amber-400">{formatUZS(estimate.materialsTotal)}</span>
+                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs flex justify-between items-center">
+                  <span className="text-slate-400 text-[10px]">Mo&apos;ljal smeta budjeti:</span>
+                  <span className="font-bold text-amber-400">{formatUZS(estimate.grandTotal || estimate.materialsTotal)}</span>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    triggerNotificationHaptic("success");
-                    setLeadSubmitted(true);
-                  }}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95"
+                  disabled={isSubmittingLead}
+                  onClick={handleCreateLead}
+                  className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95 flex items-center justify-center gap-2"
                 >
-                  🚀 Buyurtmani yuborish
+                  {isSubmittingLead ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Birjaga e&apos;lon qilinmoqda...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>🚀 Buyurtmani birjaga yuborish</span>
+                    </>
+                  )}
                 </button>
               </div>
             )}

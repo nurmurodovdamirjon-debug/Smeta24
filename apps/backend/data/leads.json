@@ -1,0 +1,58 @@
+[
+  {
+    "id": "LD-9821",
+    "title": "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq",
+    "client_name": "Farrux",
+    "client_phone": "+998 90 847 32 11",
+    "region": "Toshkent shahri",
+    "area": "78.4 m²",
+    "budget": "16 400 000 so'm",
+    "lead_type": "materials_order",
+    "price": 10000,
+    "created_at": "2026-10-17T16:08:33.948455+00:00",
+    "purchased_by": [],
+    "status": "open"
+  },
+  {
+    "id": "LD-9818",
+    "title": "Chilonzor — Polga parket yotqizish va plintus",
+    "client_name": "Sanjar",
+    "client_phone": "+998 97 122 89 00",
+    "region": "Toshkent shahri",
+    "area": "42.5 m²",
+    "budget": "7 250 000 so'm",
+    "lead_type": "need_master",
+    "price": 10000,
+    "created_at": "2026-10-17T16:08:33.948464+00:00",
+    "purchased_by": [],
+    "status": "open"
+  },
+  {
+    "id": "LD-9804",
+    "title": "Samarqand — Kottej pol steshkasi, oboy va figurali shift",
+    "client_name": "Jamshid",
+    "client_phone": "+998 93 456 78 90",
+    "region": "Samarqand",
+    "area": "140.0 m²",
+    "budget": "38 000 000 so'm",
+    "lead_type": "materials_order",
+    "price": 15000,
+    "created_at": "2026-10-17T16:08:33.948466+00:00",
+    "purchased_by": [],
+    "status": "open"
+  },
+  {
+    "id": "LD-9795",
+    "title": "Farg'ona — Yangi xonadon kafel va devor shpaklyovka",
+    "client_name": "Otabek",
+    "client_phone": "+998 91 654 32 10",
+    "region": "Farg'ona",
+    "area": "64.0 m²",
+    "budget": "11 200 000 so'm",
+    "lead_type": "need_master",
+    "price": 10000,
+    "created_at": "2026-10-17T16:08:33.948468+00:00",
+    "purchased_by": [],
+    "status": "open"
+  }
+]
