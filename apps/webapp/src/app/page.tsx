@@ -905,6 +905,99 @@ export default function Smeta24MiniApp() {
     showQuickToast("✨ Yangi loyiha boshlandi!");
   };
 
+  // ===== NUSXALASH VA TOZALASH (TELEGRAM / WHATSAPP UCHUN) =====
+  const handleCopyTextEstimate = (mode: 'project' | 'room' = 'project') => {
+    triggerHaptic("medium");
+    let text = "";
+    
+    if (mode === 'project' || showSummary) {
+      text += `📋 SMETA24 — ${currentProjectName}\n`;
+      text += `🏠 Xonalar soni: ${rooms.length} ta\n`;
+      text += `📐 Jami maydon: ${projectSummary.totalWorkArea.toFixed(1)} m² (Pol: ${projectSummary.totalFloorArea} m², Devor: ${projectSummary.totalWallArea} m², Shift: ${projectSummary.totalCeilingArea} m²)\n\n`;
+      
+      text += `🚪 XONALAR RO'YXATI:\n`;
+      projectSummary.roomBreakdown.forEach((rb, idx) => {
+        text += `${idx + 1}. ${rb.roomName}: ${rb.floorArea} m² — ${formatUZS(rb.grandTotal)}\n`;
+      });
+      
+      text += `\n🧱 TALAB QILINADIGAN MATERIALLAR:\n`;
+      projectSummary.combinedMaterials.forEach((m) => {
+        text += `• ${m.name}: ${m.packagesCount} ${m.unit} — ${formatUZS(m.totalPrice)}\n`;
+      });
+      
+      text += `\n💵 Materiallar jami: ${formatUZS(projectSummary.materialsGrandTotal)}\n`;
+      if (isMasterMode && projectSummary.laborGrandTotal > 0) {
+        text += `👷‍♂️ Usta xizmati jami: ${formatUZS(projectSummary.laborGrandTotal)}\n`;
+      }
+      text += `═══════════════════════\n`;
+      text += `💰 JAMI BUDJET: ${formatUZS(projectSummary.projectGrandTotal)}\n\n`;
+      text += `👤 Usta / Brend: ${brandName} (${masterPhone})\n`;
+      text += `🤖 @Smeta24Bot orqali avtomatik shakllantirildi`;
+    } else if (activeRoom && activeRoomEstimate) {
+      const est = activeRoomEstimate.estimate;
+      const geo = est.geometry;
+      text += `📋 SMETA24 — ${activeRoom.input.roomName}\n`;
+      text += `📐 O'lchamlari: ${activeRoom.input.length}m × ${activeRoom.input.width}m (h: ${activeRoom.input.height}m)\n`;
+      text += `📊 Maydon: Pol: ${geo.floorArea} m² | Devor: ${geo.netWallArea} m² | Shift: ${geo.ceilingArea} m²\n\n`;
+      
+      text += `🧱 MATERIALLAR:\n`;
+      est.materials.forEach((m) => {
+        text += `• ${m.name}: ${m.packagesCount} ${m.unit} (${formatUZS(m.totalPrice)})\n`;
+      });
+      
+      text += `\n💵 Materiallar: ${formatUZS(est.materialsTotal)}\n`;
+      if (isMasterMode && est.laborTotal > 0) {
+        text += `👷‍♂️ Usta xizmati: ${formatUZS(est.laborTotal)}\n`;
+      }
+      text += `═══════════════════════\n`;
+      text += `💰 JAMI XONA SMETASI: ${formatUZS(est.grandTotal)}\n\n`;
+      text += `👤 Usta / Brend: ${brandName} (${masterPhone})\n`;
+      text += `🤖 @Smeta24Bot orqali hisoblandi`;
+    }
+
+    const copyFallback = (t: string) => {
+      try {
+        const el = document.createElement("textarea");
+        el.value = t;
+        el.style.position = "fixed";
+        el.style.left = "-9999px";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        triggerNotificationHaptic("success");
+        showQuickToast("📋 Smeta nusxalandi! Chatga tashlashingiz mumkin.");
+      } catch (err) {
+        showQuickToast("❌ Nusxalashda xatolik yuz berdi");
+      }
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        triggerNotificationHaptic("success");
+        showQuickToast("📋 Smeta nusxalandi! Telegram/WhatsApp ga tashlashingiz mumkin.");
+      }).catch(() => {
+        copyFallback(text);
+      });
+    } else {
+      copyFallback(text);
+    }
+  };
+
+  const handleResetActiveRoom = () => {
+    if (confirm(`"${activeRoom?.input.roomName}" o'lchamlarini tozalaysizmi?`)) {
+      triggerHaptic("medium");
+      updateRoomInput(activeRoomId, {
+        length: 0,
+        width: 0,
+        height: 2.8,
+        openingsArea: 0,
+      });
+      showQuickToast("🧹 Xona o'lchamlari tozalandi");
+    }
+  };
+
   // ===== HELPERS =====
   const showQuickToast = (msg: string) => {
     setSaveToast(msg);
@@ -1322,20 +1415,36 @@ export default function Smeta24MiniApp() {
 
               {/* Xona uchun tezkor amallar */}
               {!showSummary && activeRoom && (
-                <div className="flex items-center gap-2 border-t border-slate-800/60 pt-2">
+                <div className="flex items-center gap-3 border-t border-slate-800/60 pt-2">
+                  <button
+                    onClick={() => handleCopyTextEstimate('room')}
+                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-amber-400 transition"
+                    title="Xona smetasini Telegram/WhatsApp uchun nusxalash"
+                  >
+                    <Copy className="w-3 h-3 text-amber-400" />
+                    <span>Matn nusxa</span>
+                  </button>
                   <button
                     onClick={() => duplicateRoom(activeRoomId)}
                     className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-sky-400 transition"
                   >
-                    <Copy className="w-3 h-3" />
+                    <Copy className="w-3 h-3 text-sky-400" />
                     <span>Nusxalash</span>
+                  </button>
+                  <button
+                    onClick={handleResetActiveRoom}
+                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-orange-400 transition"
+                    title="O'lchamlarni tozalash"
+                  >
+                    <RotateCcw className="w-3 h-3 text-orange-400" />
+                    <span>Tozalash</span>
                   </button>
                   {rooms.length > 1 && (
                     <button
                       onClick={() => removeRoom(activeRoomId)}
                       className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-rose-400 transition"
                     >
-                      <Trash2 className="w-3 h-3" />
+                      <Trash2 className="w-3 h-3 text-rose-400" />
                       <span>O&apos;chirish</span>
                     </button>
                   )}
@@ -1427,6 +1536,14 @@ export default function Smeta24MiniApp() {
 
                 {/* PDF va Buyurtma tugmalari */}
                 <div className="space-y-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopyTextEstimate('project')}
+                    className="w-full bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold text-xs py-3 px-4 rounded-xl border border-amber-500/40 flex items-center justify-center gap-2 transition active:scale-[0.98]"
+                  >
+                    <Copy className="w-4 h-4 text-amber-400" />
+                    <span>📋 Telegram / WhatsApp uchun smetani nusxalash</span>
+                  </button>
                   <button
                     type="button"
                     onClick={isUnlocked ? () => setShowPdfModal(true) : handleUnlockPdf}
@@ -2022,6 +2139,10 @@ export default function Smeta24MiniApp() {
                 ) : (
                   <><Send className="w-4 h-4 text-slate-950" /><span>📨 PDF-ni Telegram Chatga yuborish</span></>
                 )}
+              </button>
+              <button type="button" onClick={() => handleCopyTextEstimate(showSummary ? 'project' : 'room')}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-amber-500/30 transition active:scale-[0.98]">
+                <Copy className="w-3.5 h-3.5 text-amber-400" /><span>📋 Matn ko&apos;rinishida nusxalash (Chat uchun)</span>
               </button>
               <button type="button" onClick={handlePrintPdf}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition active:scale-[0.98]">
