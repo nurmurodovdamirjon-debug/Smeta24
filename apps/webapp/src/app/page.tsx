@@ -60,6 +60,7 @@ import {
   Save,
   Calendar,
   Bookmark,
+  Pencil,
 } from "lucide-react";
 
 // =======================================
@@ -647,6 +648,15 @@ export default function Smeta24MiniApp() {
   const [showSaveProjectModal, setShowSaveProjectModal] = useState(false);
   const [projectNameInput, setProjectNameInput] = useState("");
   const [currentProjectName, setCurrentProjectName] = useState("Yangi Obyekt");
+
+  // Inline material narxini tahrirlash
+  const [editingMaterial, setEditingMaterial] = useState<{
+    code: string;
+    name: string;
+    currentPrice: number;
+    unit: string;
+  } | null>(null);
+  const [editPriceInput, setEditPriceInput] = useState<number>(0);
 
   // Lid-birja
   const [leadsList, setLeadsList] = useState<any[]>([
@@ -1742,10 +1752,30 @@ export default function Smeta24MiniApp() {
                               <p className={`font-semibold leading-snug truncate ${isExcluded ? "line-through text-slate-500" : "text-slate-200"}`}>
                                 {item.name}
                               </p>
-                              <div className="flex items-center gap-2 mt-0.5">
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 <span className="text-[10px] text-slate-400">
                                   Sof sarf: <span className="text-slate-300 font-medium">{item.exactUnitStr}</span>
                                 </span>
+                                {/* Inline narxni tahrirlash tugmasi */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerHaptic("light");
+                                    setEditingMaterial({
+                                      code: item.code,
+                                      name: item.name,
+                                      currentPrice: item.unitPrice,
+                                      unit: item.unit,
+                                    });
+                                    setEditPriceInput(item.unitPrice);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 transition active:scale-95"
+                                  title="Bozor narxini o'zgartirish"
+                                >
+                                  <Pencil className="w-2.5 h-2.5" />
+                                  <span>{formatUZS(item.unitPrice)}</span>
+                                </button>
                                 {isExcluded && (
                                   <span className="text-[9px] bg-rose-500/15 text-rose-400 px-1.5 py-0.2 rounded font-medium border border-rose-500/30">
                                     Uyda bor / Kerak emas
@@ -2541,6 +2571,96 @@ export default function Smeta24MiniApp() {
                 <Save className="w-4 h-4" />
                 <span>Loyihani Xotiraga Saqlash</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: MATERIAL NARXINI TAHRIRLASH (INLINE EDIT) ===== */}
+      {editingMaterial && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm text-white">Bozor Narxini O&apos;zgartirish</h3>
+              </div>
+              <button
+                onClick={() => setEditingMaterial(null)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-0.5">Material:</span>
+                <p className="font-bold text-xs text-white">{editingMaterial.name}</p>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1">
+                  Yangi narxi (1 {editingMaterial.unit} uchun so&apos;mda):
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    autoFocus
+                    value={editPriceInput || ""}
+                    onChange={(e) => setEditPriceInput(Number(e.target.value) || 0)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-base font-black text-amber-400 focus:border-amber-500 outline-none pr-14"
+                    placeholder="0"
+                  />
+                  <span className="absolute right-3 top-3 text-xs text-slate-500 font-bold">so&apos;m</span>
+                </div>
+              </div>
+
+              {/* Tezkor +/- tugmalar */}
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1">Tezkor o&apos;zgartirish:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[-10000, -5000, +5000, +10000, +25000].map((diff) => (
+                    <button
+                      key={diff}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setEditPriceInput((prev) => Math.max(0, prev + diff));
+                      }}
+                      className="text-[10px] font-semibold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-lg px-2.5 py-1 transition active:scale-95"
+                    >
+                      {diff > 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Saqlash tugmasi */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editPriceInput > 0) {
+                      updateMaterialPrice(editingMaterial.code, editPriceInput);
+                      setEditingMaterial(null);
+                      triggerNotificationHaptic("success");
+                      showQuickToast(`✅ ${editingMaterial.name} narxi yangilandi!`);
+                    }
+                  }}
+                  className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/25 transition active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  <span>Narxni Saqlash</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingMaterial(null)}
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-3 px-4 rounded-xl transition"
+                >
+                  Bekor qilish
+                </button>
+              </div>
             </div>
           </div>
         </div>
