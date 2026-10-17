@@ -992,3 +992,134 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
     grandTotal,
   };
 }
+
+// =========================================================================
+// KO'P XONALI TIZIM (Multi-Room Support)
+// =========================================================================
+
+export interface RoomData {
+  id: string;
+  input: RoomInput;
+  estimate: EstimateResult;
+}
+
+export interface ProjectData {
+  id: string;
+  name: string;
+  rooms: RoomData[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectSummary {
+  totalRooms: number;
+  totalFloorArea: number;
+  totalWallArea: number;
+  totalCeilingArea: number;
+  totalWorkArea: number;
+  combinedMaterials: MaterialItem[];
+  combinedLabor: LaborItem[];
+  materialsGrandTotal: number;
+  laborGrandTotal: number;
+  projectGrandTotal: number;
+  roomBreakdown: {
+    roomName: string;
+    roomId: string;
+    materialsTotal: number;
+    laborTotal: number;
+    grandTotal: number;
+    floorArea: number;
+  }[];
+}
+
+/** Bir nechta xona estimatini birlashtirib, loyiha miqyosida umumiy hisobotni chiqaradi */
+export function calculateProjectSummary(rooms: RoomData[]): ProjectSummary {
+  let totalFloorArea = 0;
+  let totalWallArea = 0;
+  let totalCeilingArea = 0;
+  let totalWorkArea = 0;
+  let materialsGrandTotal = 0;
+  let laborGrandTotal = 0;
+
+  const combinedMaterials: MaterialItem[] = [];
+  const combinedLabor: LaborItem[] = [];
+  const roomBreakdown: ProjectSummary['roomBreakdown'] = [];
+
+  for (const room of rooms) {
+    const est = room.estimate;
+    const geo = est.geometry;
+
+    totalFloorArea += geo.floorArea;
+    totalWallArea += geo.netWallArea;
+    totalCeilingArea += geo.ceilingArea;
+    totalWorkArea += geo.totalWorkArea;
+    materialsGrandTotal += est.materialsTotal;
+    laborGrandTotal += est.laborTotal;
+
+    // Materiallarni ro'yxatga qo'shish (xona nomi bilan belgilash)
+    for (const mat of est.materials) {
+      combinedMaterials.push({
+        ...mat,
+        name: `${mat.name}`,
+        description: `${room.input.roomName}: ${mat.description || mat.name}`,
+      });
+    }
+
+    // Mehnat xarajatlarini qo'shish
+    for (const lab of est.laborItems) {
+      combinedLabor.push({
+        ...lab,
+        id: `${room.id}_${lab.id}`,
+        name: `${room.input.roomName}: ${lab.name}`,
+      });
+    }
+
+    roomBreakdown.push({
+      roomName: room.input.roomName,
+      roomId: room.id,
+      materialsTotal: est.materialsTotal,
+      laborTotal: est.laborTotal,
+      grandTotal: est.grandTotal,
+      floorArea: geo.floorArea,
+    });
+  }
+
+  return {
+    totalRooms: rooms.length,
+    totalFloorArea: Number(totalFloorArea.toFixed(2)),
+    totalWallArea: Number(totalWallArea.toFixed(2)),
+    totalCeilingArea: Number(totalCeilingArea.toFixed(2)),
+    totalWorkArea: Number(totalWorkArea.toFixed(2)),
+    combinedMaterials,
+    combinedLabor,
+    materialsGrandTotal,
+    laborGrandTotal,
+    projectGrandTotal: materialsGrandTotal + laborGrandTotal,
+    roomBreakdown,
+  };
+}
+
+/** Yangi xona uchun default input qaytaradi */
+export function createDefaultRoomInput(roomName: string = 'Xona'): RoomInput {
+  return {
+    roomName,
+    length: 4.0,
+    width: 3.5,
+    height: 2.8,
+    openingsArea: 3.0,
+    ceilingWork: 'gipsokarton_plain',
+    wallWork: 'paint_spray',
+    includePlaster: false,
+    includePautinka: true,
+    plasterThicknessCm: 1.0,
+    floorWork: 'laminate',
+    includeScreed: false,
+    includeSelfLeveling: false,
+    tier: 'standard',
+  };
+}
+
+/** Unique ID generator */
+export function generateRoomId(): string {
+  return `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+}

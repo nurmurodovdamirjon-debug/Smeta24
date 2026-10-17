@@ -1,14 +1,19 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   calculateSmartEstimate,
+  calculateProjectSummary,
+  createDefaultRoomInput,
+  generateRoomId,
   formatUZS,
   CeilingWorkType,
   WallWorkType,
   FloorWorkType,
   QualityTier,
   RoomInput,
+  RoomData,
+  ProjectSummary,
   CONFIGURABLE_MATERIALS,
   CONFIGURABLE_LABOR_RATES,
 } from "@/lib/calculator";
@@ -44,151 +49,648 @@ import {
   Phone,
   RefreshCw,
   ExternalLink,
+  Trash2,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  Home,
+  LayoutGrid,
+  FolderArchive,
+  FolderOpen,
+  Save,
+  Calendar,
+  Bookmark,
 } from "lucide-react";
 
-export default function Smeta24MiniApp() {
-  // Navigation Tabs: 'calc' | 'profile' | 'leads' | 'guide'
-  const [activeTab, setActiveTab] = useState<'calc' | 'profile' | 'leads' | 'guide'>('calc');
+// =======================================
+// XONA TILI VA RANGLARI
+// =======================================
+const ROOM_COLORS = [
+  { bg: "from-amber-500/15 to-amber-600/5", border: "border-amber-500/40", text: "text-amber-400", activeBg: "bg-amber-500", activeText: "text-slate-950" },
+  { bg: "from-sky-500/15 to-sky-600/5", border: "border-sky-500/40", text: "text-sky-400", activeBg: "bg-sky-500", activeText: "text-slate-950" },
+  { bg: "from-emerald-500/15 to-emerald-600/5", border: "border-emerald-500/40", text: "text-emerald-400", activeBg: "bg-emerald-500", activeText: "text-slate-950" },
+  { bg: "from-violet-500/15 to-violet-600/5", border: "border-violet-500/40", text: "text-violet-400", activeBg: "bg-violet-500", activeText: "text-white" },
+  { bg: "from-rose-500/15 to-rose-600/5", border: "border-rose-500/40", text: "text-rose-400", activeBg: "bg-rose-500", activeText: "text-white" },
+  { bg: "from-cyan-500/15 to-cyan-600/5", border: "border-cyan-500/40", text: "text-cyan-400", activeBg: "bg-cyan-500", activeText: "text-slate-950" },
+  { bg: "from-orange-500/15 to-orange-600/5", border: "border-orange-500/40", text: "text-orange-400", activeBg: "bg-orange-500", activeText: "text-slate-950" },
+  { bg: "from-pink-500/15 to-pink-600/5", border: "border-pink-500/40", text: "text-pink-400", activeBg: "bg-pink-500", activeText: "text-white" },
+];
 
-  // Telegram User
-  const [tgUser, setTgUser] = useState<TelegramUser | null>(null);
+const DEFAULT_ROOM_NAMES = [
+  "Mehmonxona", "Yotoqxona", "Oshxona", "Sanuzel", "Koridor",
+  "Bolalar xonasi", "Kabinet", "Balkon",
+];
 
-  // 1. Xona Geometriyasi (Matn holatida - 0 bilan bog'liq xatoni yo'qotish uchun)
-  const [roomName, setRoomName] = useState("Mehmonxona");
-  const [length, setLength] = useState<string>("5.5");
-  const [width, setWidth] = useState<string>("4.0");
-  const [height, setHeight] = useState<string>("3.0");
-  const [openingsArea, setOpeningsArea] = useState<string>("4.2");
+// =======================================
+// PRESETLAR
+// =======================================
+const ROOM_PRESETS = [
+  {
+    name: "Mehmonxona (Zal)",
+    l: 5.5, w: 4.0, h: 3.0, op: 4.2,
+    ceiling: "gipsokarton_decor" as CeilingWorkType,
+    wall: "paint_spray" as WallWorkType,
+    pautinka: true, plaster: false,
+    floor: "laminate" as FloorWorkType,
+    screed: false, selfLeveling: false,
+  },
+  {
+    name: "Yotoqxona",
+    l: 4.2, w: 3.2, h: 2.8, op: 3.5,
+    ceiling: "gipsokarton_plain" as CeilingWorkType,
+    wall: "wallpaper" as WallWorkType,
+    pautinka: false, plaster: false,
+    floor: "laminate" as FloorWorkType,
+    screed: false, selfLeveling: false,
+  },
+  {
+    name: "Kottej / Premium",
+    l: 6.0, w: 5.0, h: 3.2, op: 5.0,
+    ceiling: "gipsokarton_decor" as CeilingWorkType,
+    wall: "paint_spray" as WallWorkType,
+    pautinka: true, plaster: true,
+    floor: "parquet" as FloorWorkType,
+    screed: true, selfLeveling: true,
+  },
+  {
+    name: "Oshxona",
+    l: 3.8, w: 3.0, h: 2.8, op: 3.2,
+    ceiling: "gipsokarton_plain" as CeilingWorkType,
+    wall: "paint_roller" as WallWorkType,
+    pautinka: true, plaster: false,
+    floor: "tile" as FloorWorkType,
+    screed: false, selfLeveling: false,
+  },
+  {
+    name: "Sanuzel / Vanna",
+    l: 2.5, w: 2.0, h: 2.6, op: 1.8,
+    ceiling: "stretch" as CeilingWorkType,
+    wall: "tile" as WallWorkType,
+    pautinka: false, plaster: false,
+    floor: "tile" as FloorWorkType,
+    screed: false, selfLeveling: false,
+  },
+];
 
-  // Raqamli kiritishda qulaylik: vergulni nuqtaga almashtirish va bo'sh qolganda 0 chiqmasligi
+// =======================================
+// ROOM INPUT COMPONENT
+// =======================================
+interface RoomInputFormProps {
+  input: RoomInput;
+  onUpdate: (updates: Partial<RoomInput>) => void;
+  estimate: ReturnType<typeof calculateSmartEstimate>;
+  isUnlocked: boolean;
+  onUnlock: () => void;
+  isMasterMode: boolean;
+  roomColor: typeof ROOM_COLORS[0];
+}
+
+function RoomInputForm({
+  input,
+  onUpdate,
+  estimate,
+  isUnlocked,
+  onUnlock,
+  isMasterMode,
+  roomColor,
+}: RoomInputFormProps) {
   const handleDecimalChange = (
     val: string,
-    setter: React.Dispatch<React.SetStateAction<string>>
+    field: keyof RoomInput
   ) => {
     const cleaned = val.replace(",", ".");
     if (cleaned === "" || /^\d*\.?\d*$/.test(cleaned)) {
-      setter(cleaned);
+      onUpdate({ [field]: cleaned === "" ? 0 : parseFloat(cleaned) || 0 });
     }
   };
 
-  // 2. Modulli Ta'mir Tanlovlari (Shift, Devor, Pol)
-  const [ceilingWork, setCeilingWork] = useState<CeilingWorkType>("gipsokarton_plain");
+  return (
+    <div className="space-y-4">
+      {/* Tezkor Shablonlar */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+        <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap pl-0.5">
+          Shablon:
+        </span>
+        {ROOM_PRESETS.map((p) => (
+          <button
+            key={p.name}
+            onClick={() => {
+              triggerHaptic("medium");
+              onUpdate({
+                roomName: p.name,
+                length: p.l,
+                width: p.w,
+                height: p.h,
+                openingsArea: p.op,
+                ceilingWork: p.ceiling,
+                wallWork: p.wall,
+                includePautinka: p.pautinka,
+                includePlaster: p.plaster,
+                floorWork: p.floor,
+                includeScreed: p.screed,
+                includeSelfLeveling: p.selfLeveling,
+              });
+            }}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${
+              input.roomName === p.name
+                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/20"
+                : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700"
+            }`}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
 
-  const [wallWork, setWallWork] = useState<WallWorkType>("paint_spray");
-  const [includePlaster, setIncludePlaster] = useState<boolean>(false);
-  const [includePautinka, setIncludePautinka] = useState<boolean>(true);
-  const [plasterThickness, setPlasterThickness] = useState<number>(1.0);
+      {/* 1-BLOK: XONA GEOMETRIYASI */}
+      <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
+              1
+            </div>
+            <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+              Xona O&apos;lchamlari
+            </h2>
+          </div>
+          <input
+            type="text"
+            value={input.roomName}
+            onChange={(e) => onUpdate({ roomName: e.target.value })}
+            className="bg-slate-950 text-xs text-right px-2.5 py-1 rounded-lg border border-slate-700 text-white font-medium focus:outline-none focus:border-amber-500 w-36"
+            placeholder="Xona nomi"
+          />
+        </div>
 
-  const [floorWork, setFloorWork] = useState<FloorWorkType>("laminate");
-  const [includeScreed, setIncludeScreed] = useState<boolean>(false);
-  const [includeSelfLeveling, setIncludeSelfLeveling] = useState<boolean>(false);
+        <div className="grid grid-cols-3 gap-2.5">
+          {[
+            { label: "Uzunligi (L)", field: "length" as const, val: input.length },
+            { label: "Eni (W)", field: "width" as const, val: input.width },
+            { label: "Balandligi (H)", field: "height" as const, val: input.height },
+          ].map((item) => (
+            <div key={item.field}>
+              <label className="text-[10px] text-slate-400 block mb-1">{item.label}</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={item.val || ""}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => handleDecimalChange(e.target.value, item.field)}
+                  placeholder="0"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
+                />
+                <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
+              </div>
+            </div>
+          ))}
+        </div>
 
+        <div>
+          <label className="text-[10px] text-slate-400 block mb-1">
+            Eshik va Derazalar jami yuzasi (devor maydonidan chegiriladi)
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={input.openingsArea || ""}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => handleDecimalChange(e.target.value, "openingsArea")}
+              placeholder="0"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-8"
+            />
+            <span className="absolute right-3 top-2.5 text-[10px] text-slate-500 font-medium">m²</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-950 rounded-xl p-2.5 grid grid-cols-4 text-center border border-slate-800/80">
+          <div>
+            <span className="text-[9px] text-slate-400 block">Perimetr</span>
+            <span className="text-xs font-bold text-slate-200">{estimate.geometry.perimeter} m</span>
+          </div>
+          <div className="border-x border-slate-800">
+            <span className="text-[9px] text-slate-400 block">Sof devor</span>
+            <span className="text-xs font-bold text-slate-200">{estimate.geometry.netWallArea} m²</span>
+          </div>
+          <div className="border-r border-slate-800">
+            <span className="text-[9px] text-slate-400 block">Shift / Pol</span>
+            <span className="text-xs font-bold text-slate-200">{estimate.geometry.ceilingArea} m²</span>
+          </div>
+          <div>
+            <span className="text-[9px] text-amber-400 block font-semibold">Plintus</span>
+            <span className="text-xs font-black text-amber-400">{estimate.geometry.plinthLength} m</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 2-BLOK: SHIFT (POTOLOK) ISHLARI */}
+      <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center font-bold text-xs">
+              ☁️
+            </div>
+            <div>
+              <h2 className="text-xs font-bold text-sky-400 uppercase tracking-wider">
+                Shift (Potolok) Ishlari
+              </h2>
+              <p className="text-[10px] text-slate-400">Maydon: {estimate.geometry.ceilingArea} m²</p>
+            </div>
+          </div>
+          {input.ceilingWork !== "none" && (
+            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+              Faol
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id: "gipsokarton_plain" as CeilingWorkType, title: "Gipskarton Tekis", sub: "Knauf 1-qavat karkas", badge: "Ko'p tanlangan" },
+            { id: "gipsokarton_decor" as CeilingWorkType, title: "Gipskarton Figurali", sub: "2-qavat naqshli dizayn", badge: "Dizayn" },
+            { id: "paint_spray" as CeilingWorkType, title: "Bo'yoq (Kraskapult)", sub: "Shpaklyovka + Sepish", badge: null },
+            { id: "paint_roller" as CeilingWorkType, title: "Bo'yoq (Valikda)", sub: "Shpaklyovka + Valik", badge: null },
+            { id: "stretch" as CeilingWorkType, title: "Natyajnoy potolok", sub: "Fransuz plyonka + montaj", badge: null },
+            { id: "none" as CeilingWorkType, title: "Shiftga tegilmaydi", sub: "Hisobdan chiqarish", badge: null },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                triggerHaptic("medium");
+                onUpdate({ ceilingWork: item.id });
+              }}
+              className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between relative ${
+                input.ceilingWork === item.id
+                  ? "bg-gradient-to-br from-sky-950 to-slate-900 border-sky-400 text-white shadow-md shadow-sky-500/10 ring-1 ring-sky-500/30"
+                  : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+              }`}
+            >
+              {item.badge && (
+                <span className="absolute -top-1.5 right-2 bg-amber-500 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-full">
+                  {item.badge}
+                </span>
+              )}
+              <span className="text-xs font-bold leading-tight">{item.title}</span>
+              <span className="text-[9.5px] text-slate-400 mt-1">{item.sub}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* 3-BLOK: DEVOR ISHLARI */}
+      <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
+              🧱
+            </div>
+            <div>
+              <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                Devor Ishlari &amp; Qoplamalar
+              </h2>
+              <p className="text-[10px] text-slate-400">Sof maydon: {estimate.geometry.netWallArea} m²</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { id: "paint_spray" as WallWorkType, title: "Bo'yoq (Kraskapult)", sub: "Sepish", badge: "Hit" },
+            { id: "paint_roller" as WallWorkType, title: "Bo'yoq (Valik)", sub: "Klassik", badge: null },
+            { id: "wallpaper" as WallWorkType, title: "Oboy", sub: "Vinil/Flizelin", badge: null },
+            { id: "tile" as WallWorkType, title: "Kafel / Plitka", sub: "Keramogranit", badge: null },
+            { id: "paint_standard" as WallWorkType, title: "Standart emulsiya", sub: "Start+Finish", badge: null },
+            { id: "none" as WallWorkType, title: "Tegilmaydi", sub: "Hisobdan chiqarish", badge: null },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                triggerHaptic("medium");
+                onUpdate({ wallWork: item.id });
+              }}
+              className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center relative ${
+                input.wallWork === item.id
+                  ? "bg-gradient-to-b from-amber-500 to-amber-600 text-slate-950 border-amber-400 font-bold shadow-md shadow-amber-500/20"
+                  : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+              }`}
+            >
+              {item.badge && (
+                <span className="absolute -top-1.5 right-1.5 bg-emerald-500 text-slate-950 text-[7.5px] font-black px-1.5 py-0.2 rounded-full">
+                  {item.badge}
+                </span>
+              )}
+              <span className="text-xs leading-tight">{item.title}</span>
+              <span className={`text-[8.5px] mt-0.5 ${input.wallWork === item.id ? "text-slate-950 font-medium" : "text-slate-500"}`}>
+                {item.sub}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Qo'shimcha qatlamlar */}
+        <div className="space-y-2 pt-1">
+          <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={input.includePlaster || false}
+                  onChange={(e) => {
+                    triggerHaptic("light");
+                    onUpdate({ includePlaster: e.target.checked });
+                  }}
+                  className="w-4 h-4 accent-amber-500 rounded"
+                />
+                <span className="text-xs font-semibold text-slate-200">
+                  Mayoq bo&apos;yicha gipsli suvoq (Rotband)
+                </span>
+              </label>
+              <span className="text-[10px] text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded">
+                Gips
+              </span>
+            </div>
+            {input.includePlaster && (
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs">
+                <span className="text-[10px] text-slate-400">Qatlam qalinligi:</span>
+                <div className="flex items-center gap-1.5">
+                  {[0.5, 1.0, 1.5, 2.0].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => onUpdate({ plasterThicknessCm: val })}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                        (input.plasterThicknessCm || 1.0) === val
+                          ? "bg-amber-500 text-slate-950 border-amber-400"
+                          : "bg-slate-900 text-slate-400 border-slate-800"
+                      }`}
+                    >
+                      {val} sm
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {(input.wallWork === "paint_spray" || input.wallWork === "paint_roller") && (
+            <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={input.includePautinka || false}
+                  onChange={(e) => {
+                    triggerHaptic("light");
+                    onUpdate({ includePautinka: e.target.checked });
+                  }}
+                  className="w-4 h-4 accent-amber-500 rounded"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-slate-200 block">
+                    Stekloxolst (Pautinka) yopishtirish
+                  </span>
+                  <span className="text-[9.5px] text-slate-500">
+                    Devor yorilishiga qarshi + maxsus tayyor kley
+                  </span>
+                </div>
+              </label>
+              <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
+                Tavsiya
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* 4-BLOK: POL ISHLARI */}
+      <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
+              🪵
+            </div>
+            <div>
+              <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
+                Pol (Floor) Ishlari
+              </h2>
+              <p className="text-[10px] text-slate-400">Maydon: {estimate.geometry.floorArea} m²</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id: "laminate" as FloorWorkType, title: "Laminat (33-klass)", sub: "Podlojka + Plintus", badge: "Mashhur" },
+            { id: "parquet" as FloorWorkType, title: "Parket / Inzhener", sub: "Tabiiy yog'och + 2K yelim", badge: "Premium" },
+            { id: "tile" as FloorWorkType, title: "Polga Kafel / Plitka", sub: "Keramogranit + kley", badge: null },
+            { id: "none" as FloorWorkType, title: "Polga tegilmaydi", sub: "Hisobdan chiqarish", badge: null },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                triggerHaptic("medium");
+                onUpdate({ floorWork: item.id });
+              }}
+              className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between relative ${
+                input.floorWork === item.id
+                  ? "bg-gradient-to-br from-emerald-950 to-slate-900 border-emerald-400 text-white shadow-md shadow-emerald-500/10 ring-1 ring-emerald-500/30"
+                  : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
+              }`}
+            >
+              {item.badge && (
+                <span className="absolute -top-1.5 right-2 bg-amber-500 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-full">
+                  {item.badge}
+                </span>
+              )}
+              <span className="text-xs font-bold leading-tight">{item.title}</span>
+              <span className="text-[9.5px] text-slate-400 mt-1">{item.sub}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-2 pt-1">
+          <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={input.includeScreed || false}
+                onChange={(e) => {
+                  triggerHaptic("light");
+                  onUpdate({ includeScreed: e.target.checked });
+                }}
+                className="w-4 h-4 accent-emerald-500 rounded"
+              />
+              <div>
+                <span className="text-xs font-semibold text-slate-200 block">
+                  Pol steshkasi (Beton styajka, ~5 sm)
+                </span>
+                <span className="text-[9.5px] text-slate-500">
+                  Tsement M400 + daryo qumi + mustahkamlovchi to&apos;r
+                </span>
+              </div>
+            </label>
+            <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
+              5 sm
+            </span>
+          </div>
+
+          <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={input.includeSelfLeveling || false}
+                onChange={(e) => {
+                  triggerHaptic("light");
+                  onUpdate({ includeSelfLeveling: e.target.checked });
+                }}
+                className="w-4 h-4 accent-emerald-500 rounded"
+              />
+              <div>
+                <span className="text-xs font-semibold text-slate-200 block">
+                  Nalivnoy pol (Samonivelir tekislash)
+                </span>
+                <span className="text-[9.5px] text-slate-500">
+                  Laminat yoki parket ostiga yupqa oyna tekislik
+                </span>
+              </div>
+            </label>
+            <span className="text-[10px] text-sky-400 font-medium bg-sky-500/10 px-1.5 py-0.5 rounded">
+              3 mm
+            </span>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// =======================================
+// MAIN APP
+// =======================================
+export default function Smeta24MiniApp() {
+  const [activeTab, setActiveTab] = useState<'calc' | 'profile' | 'leads' | 'guide'>('calc');
+  const [tgUser, setTgUser] = useState<TelegramUser | null>(null);
+
+  // ===== KO'P XONALI TIZIM =====
+  const [rooms, setRooms] = useState<{ id: string; input: RoomInput }[]>(() => {
+    const defaultId = generateRoomId();
+    return [{
+      id: defaultId,
+      input: {
+        ...createDefaultRoomInput("Mehmonxona"),
+        length: 5.5,
+        width: 4.0,
+        height: 3.0,
+        openingsArea: 4.2,
+        ceilingWork: "gipsokarton_plain",
+        wallWork: "paint_spray",
+        includePautinka: true,
+        floorWork: "laminate",
+      },
+    }];
+  });
+
+  const [activeRoomId, setActiveRoomId] = useState<string>(() => rooms[0]?.id || "");
+  const [showSummary, setShowSummary] = useState(false);
+
+  // Usta PRO
+  const [isMasterMode, setIsMasterMode] = useState(true);
+  const [brandName, setBrandName] = useState("ProFinish Uz");
+  const [masterPhone, setMasterPhone] = useState("+998 90 123 45 67");
+  const [userBalance, setUserBalance] = useState(15000);
   const [tier, setTier] = useState<QualityTier>("standard");
 
-  // 3. Usta PRO Sozlamalari
-  const [isMasterMode, setIsMasterMode] = useState<boolean>(true);
-  const [brandName, setBrandName] = useState<string>("ProFinish Uz");
-  const [masterPhone, setMasterPhone] = useState<string>("+998 90 123 45 67");
-  const [userBalance, setUserBalance] = useState<number>(15000);
-
-  // Profil sozlamalari ichki tabi: 'rates' | 'materials'
+  // Profile sub-tab
   const [profileSubTab, setProfileSubTab] = useState<'rates' | 'materials'>('rates');
-  const [profileCategoryFilter, setProfileCategoryFilter] = useState<string>('Barchasi');
+  const [profileCategoryFilter, setProfileCategoryFilter] = useState('Barchasi');
 
-  // Usta shaxsiy stavkalari (1 m2)
   const initialLaborRates: Record<string, number> = useMemo(() => {
     const map: Record<string, number> = {};
-    CONFIGURABLE_LABOR_RATES.forEach((r) => {
-      map[r.id] = r.defaultRate;
-    });
+    CONFIGURABLE_LABOR_RATES.forEach((r) => { map[r.id] = r.defaultRate; });
     return map;
   }, []);
 
   const [masterRates, setMasterRates] = useState<Record<string, number>>(initialLaborRates);
 
-  // Tuman / Do'kon material narxlari
   const initialMaterialPrices: Record<string, number> = useMemo(() => {
     const map: Record<string, number> = {};
-    CONFIGURABLE_MATERIALS.forEach((m) => {
-      map[m.code] = m.defaultPrice;
-    });
+    CONFIGURABLE_MATERIALS.forEach((m) => { map[m.code] = m.defaultPrice; });
     return map;
   }, []);
 
   const [materialPrices, setMaterialPrices] = useState<Record<string, number>>(initialMaterialPrices);
 
-  // 4. Modallar va Statuslar
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
-  const [showPdfModal, setShowPdfModal] = useState<boolean>(false);
-  const [showLeadModal, setShowLeadModal] = useState<boolean>(false);
-  const [showTopupModal, setShowTopupModal] = useState<boolean>(false);
-  const [leadSubmitted, setLeadSubmitted] = useState<boolean>(false);
-  const [clientPhone, setClientPhone] = useState<string>("+998 9");
-  const [clientRegion, setClientRegion] = useState<string>("Toshkent shahri");
-  const [isSendingPdf, setIsSendingPdf] = useState<boolean>(false);
-  const [pdfStatusMsg, setPdfStatusMsg] = useState<string>("");
-  const [saveToast, setSaveToast] = useState<string>("");
+  // Modals
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+  const [showTopupModal, setShowTopupModal] = useState(false);
+  const [leadSubmitted, setLeadSubmitted] = useState(false);
+  const [clientPhone, setClientPhone] = useState("+998 9");
+  const [clientRegion, setClientRegion] = useState("Toshkent shahri");
+  const [isSendingPdf, setIsSendingPdf] = useState(false);
+  const [pdfStatusMsg, setPdfStatusMsg] = useState("");
+  const [saveToast, setSaveToast] = useState("");
 
-  // Lead-birja holati
+  // ===== MENING SMETALARIM (LOYIHALAR TARIXI) =====
+  const [savedProjects, setSavedProjects] = useState<{
+    id: string;
+    name: string;
+    createdAt: string;
+    rooms: { id: string; input: RoomInput }[];
+    tier: QualityTier;
+    grandTotal: number;
+    totalWorkArea: number;
+    totalRooms: number;
+  }[]>([]);
+  const [showProjectsModal, setShowProjectsModal] = useState(false);
+  const [showSaveProjectModal, setShowSaveProjectModal] = useState(false);
+  const [projectNameInput, setProjectNameInput] = useState("");
+  const [currentProjectName, setCurrentProjectName] = useState("Yangi Obyekt");
+
+  // Lid-birja
   const [leadsList, setLeadsList] = useState<any[]>([
-    {
-      id: "LD-9821",
-      title: "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq",
-      area: "78.4 m²",
-      budget: "16 400 000 so'm",
-      date: "10 daqiqa oldin",
-      region: "Toshkent shahri",
-      price: 10000,
-      lead_type: "materials_order",
-      isPurchased: false,
-      contact: "+998 90 ••• •• 11 (Farrux)",
-    },
-    {
-      id: "LD-9818",
-      title: "Chilonzor — Polga parket yotqizish va plintus",
-      area: "42.5 m²",
-      budget: "7 250 000 so'm",
-      date: "35 daqiqa oldin",
-      region: "Toshkent shahri",
-      price: 10000,
-      lead_type: "need_master",
-      isPurchased: false,
-      contact: "+998 97 ••• •• 00 (Sanjar)",
-    },
-    {
-      id: "LD-9804",
-      title: "Samarqand — Kottej pol steshkasi, oboy va figurali shift",
-      area: "140.0 m²",
-      budget: "38 000 000 so'm",
-      date: "2 soat oldin",
-      region: "Samarqand",
-      price: 15000,
-      lead_type: "materials_order",
-      isPurchased: false,
-      contact: "+998 93 ••• •• 90 (Jamshid)",
-    },
+    { id: "LD-9821", title: "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq", area: "78.4 m²", budget: "16 400 000 so'm", date: "10 daqiqa oldin", region: "Toshkent shahri", price: 10000, lead_type: "materials_order", isPurchased: false, contact: "+998 90 ••• •• 11 (Farrux)" },
+    { id: "LD-9818", title: "Chilonzor — Polga parket yotqizish va plintus", area: "42.5 m²", budget: "7 250 000 so'm", date: "35 daqiqa oldin", region: "Toshkent shahri", price: 10000, lead_type: "need_master", isPurchased: false, contact: "+998 97 ••• •• 00 (Sanjar)" },
+    { id: "LD-9804", title: "Samarqand — Kottej pol steshkasi, oboy va figurali shift", area: "140.0 m²", budget: "38 000 000 so'm", date: "2 soat oldin", region: "Samarqand", price: 15000, lead_type: "materials_order", isPurchased: false, contact: "+998 93 ••• •• 90 (Jamshid)" },
   ]);
-  const [isLoadingLeads, setIsLoadingLeads] = useState<boolean>(false);
-  const [selectedLeadRegion, setSelectedLeadRegion] = useState<string>("Barchasi");
-  const [selectedLeadType, setSelectedLeadType] = useState<string>("Barchasi");
-  const [isSubmittingLead, setIsSubmittingLead] = useState<boolean>(false);
-  const [leadClientName, setLeadClientName] = useState<string>("");
-  const [leadOrderType, setLeadOrderType] = useState<string>("materials_order");
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [selectedLeadRegion, setSelectedLeadRegion] = useState("Barchasi");
+  const [selectedLeadType, setSelectedLeadType] = useState("Barchasi");
+  const [isSubmittingLead, setIsSubmittingLead] = useState(false);
+  const [leadClientName, setLeadClientName] = useState("");
+  const [leadOrderType, setLeadOrderType] = useState("materials_order");
 
-  // Init Telegram & localStorage dan saqlangan sozlamalarni yuklash
+  // ===== INIT =====
   useEffect(() => {
     try {
       const savedRates = localStorage.getItem("smeta24_master_rates");
       if (savedRates) setMasterRates(JSON.parse(savedRates));
-
       const savedMaterials = localStorage.getItem("smeta24_material_prices");
       if (savedMaterials) setMaterialPrices(JSON.parse(savedMaterials));
-
       const savedBrand = localStorage.getItem("smeta24_brand_name");
       if (savedBrand) setBrandName(savedBrand);
-
       const savedPhone = localStorage.getItem("smeta24_master_phone");
       if (savedPhone) setMasterPhone(savedPhone);
+      // Saqlangan xonalar
+      const savedRooms = localStorage.getItem("smeta24_rooms");
+      if (savedRooms) {
+        const parsed = JSON.parse(savedRooms);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRooms(parsed);
+          setActiveRoomId(parsed[0].id);
+        }
+      }
+      // Saqlangan loyihalar tarixi
+      const savedProjRaw = localStorage.getItem("smeta24_saved_projects");
+      if (savedProjRaw) {
+        try {
+          const parsedProj = JSON.parse(savedProjRaw);
+          if (Array.isArray(parsedProj)) setSavedProjects(parsedProj);
+        } catch (e) {}
+      }
+      const savedCurrentName = localStorage.getItem("smeta24_current_project_name");
+      if (savedCurrentName) setCurrentProjectName(savedCurrentName);
     } catch (e) {
       console.warn("Storage load error:", e);
     }
@@ -225,12 +727,194 @@ export default function Smeta24MiniApp() {
     }
   }, []);
 
+  // ===== AUTO-SAVE ROOMS =====
+  useEffect(() => {
+    try {
+      localStorage.setItem("smeta24_rooms", JSON.stringify(rooms));
+    } catch (e) {}
+  }, [rooms]);
+
+  // ===== CALCULATIONS (memoized) =====
+  const roomEstimates: RoomData[] = useMemo(() => {
+    return rooms.map((room) => {
+      const input: RoomInput = {
+        ...room.input,
+        tier,
+        masterRates,
+        materialPrices,
+      };
+      return {
+        id: room.id,
+        input,
+        estimate: calculateSmartEstimate(input),
+      };
+    });
+  }, [rooms, tier, masterRates, materialPrices]);
+
+  const projectSummary: ProjectSummary = useMemo(() => {
+    return calculateProjectSummary(roomEstimates);
+  }, [roomEstimates]);
+
+  const activeRoom = rooms.find((r) => r.id === activeRoomId);
+  const activeRoomEstimate = roomEstimates.find((r) => r.id === activeRoomId);
+  const activeRoomIndex = rooms.findIndex((r) => r.id === activeRoomId);
+
+  // ===== ROOM CRUD =====
+  const addRoom = useCallback(() => {
+    triggerHaptic("medium");
+    const usedNames = rooms.map((r) => r.input.roomName);
+    const nextName = DEFAULT_ROOM_NAMES.find((n) => !usedNames.includes(n)) || `Xona ${rooms.length + 1}`;
+    const newId = generateRoomId();
+    const newRoom = { id: newId, input: createDefaultRoomInput(nextName) };
+    setRooms((prev) => [...prev, newRoom]);
+    setActiveRoomId(newId);
+    setShowSummary(false);
+  }, [rooms]);
+
+  const removeRoom = useCallback((roomId: string) => {
+    if (rooms.length <= 1) return;
+    triggerHaptic("medium");
+    setRooms((prev) => {
+      const updated = prev.filter((r) => r.id !== roomId);
+      if (activeRoomId === roomId) {
+        setActiveRoomId(updated[0]?.id || "");
+      }
+      return updated;
+    });
+  }, [rooms, activeRoomId]);
+
+  const duplicateRoom = useCallback((roomId: string) => {
+    triggerHaptic("medium");
+    const source = rooms.find((r) => r.id === roomId);
+    if (!source) return;
+    const newId = generateRoomId();
+    const newRoom = {
+      id: newId,
+      input: { ...source.input, roomName: `${source.input.roomName} (nusxa)` },
+    };
+    setRooms((prev) => [...prev, newRoom]);
+    setActiveRoomId(newId);
+  }, [rooms]);
+
+  const updateRoomInput = useCallback((roomId: string, updates: Partial<RoomInput>) => {
+    setRooms((prev) =>
+      prev.map((r) =>
+        r.id === roomId ? { ...r, input: { ...r.input, ...updates } } : r
+      )
+    );
+  }, []);
+
+  // ===== LOYIHA BOSHQARUVI (MENING SMETALARIM) =====
+  const handleSaveCurrentProject = (customName?: string) => {
+    const nameToSave = (customName || projectNameInput || currentProjectName || "Obyekt").trim();
+    if (!nameToSave) return;
+    const now = new Date();
+    const formattedDate = `${now.getDate().toString().padStart(2, "0")}.${(now.getMonth() + 1).toString().padStart(2, "0")}.${now.getFullYear()} ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    
+    const newProject = {
+      id: "proj_" + Date.now(),
+      name: nameToSave,
+      createdAt: formattedDate,
+      rooms: JSON.parse(JSON.stringify(rooms)),
+      tier,
+      grandTotal: projectSummary.projectGrandTotal,
+      totalWorkArea: projectSummary.totalWorkArea,
+      totalRooms: rooms.length,
+    };
+    
+    const updated = [newProject, ...savedProjects.filter((p) => p.name !== nameToSave)];
+    setSavedProjects(updated);
+    setCurrentProjectName(nameToSave);
+    try {
+      localStorage.setItem("smeta24_saved_projects", JSON.stringify(updated));
+      localStorage.setItem("smeta24_current_project_name", nameToSave);
+    } catch (e) {}
+    setShowSaveProjectModal(false);
+    setProjectNameInput("");
+    showQuickToast(`✅ "${nameToSave}" saqlandi!`);
+    triggerNotificationHaptic("success");
+  };
+
+  const handleLoadProject = (proj: typeof savedProjects[0]) => {
+    triggerHaptic("medium");
+    if (proj.rooms && proj.rooms.length > 0) {
+      setRooms(proj.rooms);
+      setActiveRoomId(proj.rooms[0].id);
+      if (proj.tier) setTier(proj.tier);
+      setCurrentProjectName(proj.name);
+      try {
+        localStorage.setItem("smeta24_current_project_name", proj.name);
+        localStorage.setItem("smeta24_rooms", JSON.stringify(proj.rooms));
+      } catch (e) {}
+      setShowProjectsModal(false);
+      showQuickToast(`📂 "${proj.name}" yuklandi!`);
+      triggerNotificationHaptic("success");
+    }
+  };
+
+  const handleDeleteProject = (projId: string, projName: string) => {
+    triggerHaptic("medium");
+    const updated = savedProjects.filter((p) => p.id !== projId);
+    setSavedProjects(updated);
+    try {
+      localStorage.setItem("smeta24_saved_projects", JSON.stringify(updated));
+    } catch (e) {}
+    showQuickToast(`🗑️ "${projName}" o'chirildi`);
+  };
+
+  const handleDuplicateProject = (proj: typeof savedProjects[0]) => {
+    triggerHaptic("light");
+    const now = new Date();
+    const formattedDate = `${now.getDate().toString().padStart(2, "0")}.${(now.getMonth() + 1).toString().padStart(2, "0")}.${now.getFullYear()} ${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    const duplicated = {
+      ...proj,
+      id: "proj_" + Date.now(),
+      name: `${proj.name} (nusxa)`,
+      createdAt: formattedDate,
+    };
+    const updated = [duplicated, ...savedProjects];
+    setSavedProjects(updated);
+    try {
+      localStorage.setItem("smeta24_saved_projects", JSON.stringify(updated));
+    } catch (e) {}
+    showQuickToast(`📋 Nusxa olindi: "${duplicated.name}"`);
+  };
+
+  const handleNewProject = () => {
+    triggerHaptic("medium");
+    const defaultId = generateRoomId();
+    const newRooms = [{
+      id: defaultId,
+      input: {
+        ...createDefaultRoomInput("Mehmonxona"),
+        length: 5.5,
+        width: 4.0,
+        height: 3.0,
+        openingsArea: 4.2,
+      },
+    }];
+    setRooms(newRooms);
+    setActiveRoomId(defaultId);
+    setCurrentProjectName("Yangi Obyekt");
+    setShowSummary(false);
+    try {
+      localStorage.setItem("smeta24_current_project_name", "Yangi Obyekt");
+      localStorage.setItem("smeta24_rooms", JSON.stringify(newRooms));
+    } catch (e) {}
+    setShowProjectsModal(false);
+    showQuickToast("✨ Yangi loyiha boshlandi!");
+  };
+
+  // ===== HELPERS =====
+  const showQuickToast = (msg: string) => {
+    setSaveToast(msg);
+    setTimeout(() => setSaveToast(""), 2000);
+  };
+
   const updateMasterRate = (key: string, val: number) => {
     setMasterRates((prev) => {
       const updated = { ...prev, [key]: val };
-      try {
-        localStorage.setItem("smeta24_master_rates", JSON.stringify(updated));
-      } catch (e) {}
+      try { localStorage.setItem("smeta24_master_rates", JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
     showQuickToast("Usta narxi saqlandi ✅");
@@ -239,186 +923,27 @@ export default function Smeta24MiniApp() {
   const updateMaterialPrice = (key: string, val: number) => {
     setMaterialPrices((prev) => {
       const updated = { ...prev, [key]: val };
-      try {
-        localStorage.setItem("smeta24_material_prices", JSON.stringify(updated));
-      } catch (e) {}
+      try { localStorage.setItem("smeta24_material_prices", JSON.stringify(updated)); } catch (e) {}
       return updated;
     });
     showQuickToast("Material narxi saqlandi ✅");
   };
 
-  const showQuickToast = (msg: string) => {
-    setSaveToast(msg);
-    setTimeout(() => setSaveToast(""), 2000);
-  };
-
   const resetRatesToDefault = () => {
     triggerHaptic("medium");
     setMasterRates(initialLaborRates);
-    try {
-      localStorage.removeItem("smeta24_master_rates");
-    } catch (e) {}
+    try { localStorage.removeItem("smeta24_master_rates"); } catch (e) {}
     showQuickToast("Standart narxlar tiklandi 🔄");
   };
 
   const resetMaterialsToDefault = () => {
     triggerHaptic("medium");
     setMaterialPrices(initialMaterialPrices);
-    try {
-      localStorage.removeItem("smeta24_material_prices");
-    } catch (e) {}
+    try { localStorage.removeItem("smeta24_material_prices"); } catch (e) {}
     showQuickToast("Standart narxlar tiklandi 🔄");
   };
 
-  // Preset Xonalar (Tezkor Shablonlar)
-  const presets = [
-    {
-      name: "Mehmonxona (Zal)",
-      l: 5.5,
-      w: 4.0,
-      h: 3.0,
-      op: 4.2,
-      ceiling: "gipsokarton_decor" as CeilingWorkType,
-      wall: "paint_spray" as WallWorkType,
-      pautinka: true,
-      plaster: false,
-      floor: "laminate" as FloorWorkType,
-      screed: false,
-      selfLeveling: false,
-    },
-    {
-      name: "Yotoqxona",
-      l: 4.2,
-      w: 3.2,
-      h: 2.8,
-      op: 3.5,
-      ceiling: "gipsokarton_plain" as CeilingWorkType,
-      wall: "wallpaper" as WallWorkType,
-      pautinka: false,
-      plaster: false,
-      floor: "laminate" as FloorWorkType,
-      screed: false,
-      selfLeveling: false,
-    },
-    {
-      name: "Kottej / Premium",
-      l: 6.0,
-      w: 5.0,
-      h: 3.2,
-      op: 5.0,
-      ceiling: "gipsokarton_decor" as CeilingWorkType,
-      wall: "paint_spray" as WallWorkType,
-      pautinka: true,
-      plaster: true,
-      floor: "parquet" as FloorWorkType,
-      screed: true,
-      selfLeveling: true,
-    },
-    {
-      name: "Oshxona",
-      l: 3.8,
-      w: 3.0,
-      h: 2.8,
-      op: 3.2,
-      ceiling: "gipsokarton_plain" as CeilingWorkType,
-      wall: "paint_roller" as WallWorkType,
-      pautinka: true,
-      plaster: false,
-      floor: "tile" as FloorWorkType,
-      screed: false,
-      selfLeveling: false,
-    },
-    {
-      name: "Sanuzel / Vanna",
-      l: 2.5,
-      w: 2.0,
-      h: 2.6,
-      op: 1.8,
-      ceiling: "stretch" as CeilingWorkType,
-      wall: "tile" as WallWorkType,
-      pautinka: false,
-      plaster: false,
-      floor: "tile" as FloorWorkType,
-      screed: false,
-      selfLeveling: false,
-    },
-  ];
-
-  const applyPreset = (p: typeof presets[0]) => {
-    triggerHaptic("medium");
-    setRoomName(p.name);
-    setLength(String(p.l));
-    setWidth(String(p.w));
-    setHeight(String(p.h));
-    setOpeningsArea(String(p.op));
-    setCeilingWork(p.ceiling);
-    setWallWork(p.wall);
-    setIncludePautinka(p.pautinka);
-    setIncludePlaster(p.plaster);
-    setFloorWork(p.floor);
-    setIncludeScreed(p.screed);
-    setIncludeSelfLeveling(p.selfLeveling);
-  };
-
-  // Kalkulyator natijasi (Jonli hisob-kitob)
-  const numLength = parseFloat(length) || 0;
-  const numWidth = parseFloat(width) || 0;
-  const numHeight = parseFloat(height) || 0;
-  const numOpenings = parseFloat(openingsArea) || 0;
-
-  const estimate = useMemo(() => {
-    const input: RoomInput = {
-      roomName,
-      length: numLength,
-      width: numWidth,
-      height: numHeight,
-      openingsArea: numOpenings,
-      ceilingWork,
-      wallWork,
-      includePlaster,
-      includePautinka,
-      plasterThicknessCm: plasterThickness,
-      floorWork,
-      includeScreed,
-      includeSelfLeveling,
-      tier,
-      masterRates,
-      materialPrices,
-    };
-    return calculateSmartEstimate(input);
-  }, [
-    roomName,
-    numLength,
-    numWidth,
-    numHeight,
-    numOpenings,
-    ceilingWork,
-    wallWork,
-    includePlaster,
-    includePautinka,
-    plasterThickness,
-    floorWork,
-    includeScreed,
-    includeSelfLeveling,
-    tier,
-    masterRates,
-    materialPrices,
-  ]);
-
-  // Lid-birja: Saralash va filtrlar
-  const filteredLeads = useMemo(() => {
-    return leadsList.filter((ld) => {
-      const matchRegion =
-        selectedLeadRegion === "Barchasi" || ld.region === selectedLeadRegion;
-      const matchType =
-        selectedLeadType === "Barchasi" ||
-        (selectedLeadType === "materials_order" && ld.lead_type === "materials_order") ||
-        (selectedLeadType === "need_master" && ld.lead_type === "need_master");
-      return matchRegion && matchType;
-    });
-  }, [leadsList, selectedLeadRegion, selectedLeadType]);
-
-  // PDF sotib olish (Unlock)
+  // ===== UNLOCK / PDF =====
   const handleUnlockPdf = () => {
     if (userBalance >= 5000) {
       triggerNotificationHaptic("success");
@@ -431,23 +956,26 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  // Lid-birja: Serverdan yuklash
+  // ===== LID-BIRJA =====
+  const filteredLeads = useMemo(() => {
+    return leadsList.filter((ld) => {
+      const matchRegion = selectedLeadRegion === "Barchasi" || ld.region === selectedLeadRegion;
+      const matchType = selectedLeadType === "Barchasi" ||
+        (selectedLeadType === "materials_order" && ld.lead_type === "materials_order") ||
+        (selectedLeadType === "need_master" && ld.lead_type === "need_master");
+      return matchRegion && matchType;
+    });
+  }, [leadsList, selectedLeadRegion, selectedLeadType]);
+
   const fetchLeads = async () => {
     try {
       setIsLoadingLeads(true);
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
-      const uid =
-        tgUser?.id ||
-        (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) ||
-        0;
-
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const uid = tgUser?.id || (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 0;
       const res = await fetch(`${backendUrl}/api/v1/leads?user_id=${uid}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.leads && Array.isArray(data.leads)) {
-          setLeadsList(data.leads);
-        }
+        if (data.leads && Array.isArray(data.leads)) setLeadsList(data.leads);
       }
     } catch (err) {
       console.warn("Lidlarni serverdan yuklashda ogohlantirish:", err);
@@ -456,52 +984,30 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  useEffect(() => {
-    if (activeTab === "leads") {
-      fetchLeads();
-    }
-  }, [activeTab]);
+  useEffect(() => { if (activeTab === "leads") fetchLeads(); }, [activeTab]);
 
-  // Lid sotib olish (Backend API orqali)
   const handleBuyLead = async (leadId: string, price: number) => {
     if (userBalance < price) {
       triggerNotificationHaptic("warning");
       setShowTopupModal(true);
       return;
     }
-
     try {
       triggerHaptic("medium");
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
-      const uid =
-        tgUser?.id ||
-        (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) ||
-        12345678;
-
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const uid = tgUser?.id || (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 12345678;
       const res = await fetch(`${backendUrl}/api/v1/leads/${leadId}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: uid }),
       });
-
       const data = await res.json();
       if (res.ok && data.status === "purchased") {
         triggerNotificationHaptic("success");
         setUserBalance((prev) => Math.max(0, prev - price));
-        setLeadsList((prev) =>
-          prev.map((ld) =>
-            ld.id === leadId
-              ? {
-                  ...ld,
-                  isPurchased: true,
-                  contact: `${data.client_phone} (${data.client_name || "Mijoz"})`,
-                  phone_raw: data.client_phone,
-                  client_name: data.client_name,
-                }
-              : ld
-          )
-        );
+        setLeadsList((prev) => prev.map((ld) =>
+          ld.id === leadId ? { ...ld, isPurchased: true, contact: `${data.client_phone} (${data.client_name || "Mijoz"})`, phone_raw: data.client_phone, client_name: data.client_name } : ld
+        ));
         setSaveToast(`✅ Lid ochildi! Mijoz telefoni: ${data.client_phone}`);
         setTimeout(() => setSaveToast(""), 4000);
       } else {
@@ -515,7 +1021,6 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  // Yangi lid (buyurtma) yaratish va birjaga e'lon qilish
   const handleCreateLead = async () => {
     const rawDigits = clientPhone.replace(/\D/g, "");
     if (rawDigits.length < 9) {
@@ -523,13 +1028,11 @@ export default function Smeta24MiniApp() {
       alert("Iltimos, to'liq telefon raqamingizni kiriting!");
       return;
     }
-
     try {
       setIsSubmittingLead(true);
       triggerHaptic("medium");
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
-
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const estimate = activeRoomEstimate?.estimate;
       const res = await fetch(`${backendUrl}/api/v1/leads/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -537,15 +1040,14 @@ export default function Smeta24MiniApp() {
           client_phone: clientPhone,
           client_name: leadClientName || tgUser?.first_name || "Mijoz",
           region: clientRegion,
-          room_name: roomName,
-          area: estimate.geometry.totalWorkArea,
-          materials_total: estimate.materialsTotal,
-          labor_total: estimate.laborTotal,
-          grand_total: estimate.grandTotal,
+          room_name: activeRoom?.input.roomName || "Xona",
+          area: estimate?.geometry.totalWorkArea || 0,
+          materials_total: estimate?.materialsTotal || 0,
+          labor_total: estimate?.laborTotal || 0,
+          grand_total: projectSummary.projectGrandTotal,
           lead_type: leadOrderType,
         }),
       });
-
       const data = await res.json();
       if (res.ok && data.status === "published") {
         triggerNotificationHaptic("success");
@@ -563,72 +1065,60 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  // PDF faylni Telegram bot orqali chatga yuborish
+  // PDF
   const handleSendPdfToTelegram = async () => {
     setIsSendingPdf(true);
     setPdfStatusMsg("");
     triggerHaptic("medium");
-
-    const chatId =
-      tgUser?.id ||
-      (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
-
+    const chatId = tgUser?.id || (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
     if (!chatId) {
       triggerNotificationHaptic("warning");
-      setPdfStatusMsg(
-        "⚠️ Telegram ID aniqlanmadi. Iltimos, ushbu ilovani @Smeta24Bot orqali oching."
-      );
+      setPdfStatusMsg("⚠️ Telegram ID aniqlanmadi. Iltimos, ushbu ilovani @Smeta24Bot orqali oching.");
       setIsSendingPdf(false);
       return;
     }
-
     try {
-      const backendUrl =
-        process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
-
-      const materialsPayload = estimate.materials.map((m) => ({
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      // Barcha xonalar materiallarini birlashtirish
+      const materialsPayload = projectSummary.combinedMaterials.map((m) => ({
         name: m.name,
         exact: m.exactUnitStr,
         packages: `${m.packagesCount} ${m.unit}`,
         price_formatted: formatUZS(m.unitPrice),
         total_formatted: formatUZS(m.totalPrice),
       }));
-
-      const laborPayload = estimate.laborItems.map((l) => ({
+      const laborPayload = projectSummary.combinedLabor.map((l) => ({
         name: l.name,
         area: `${l.area} ${l.unitStr}`,
         rate_formatted: formatUZS(l.ratePerM2),
         total_formatted: formatUZS(l.totalPrice),
       }));
-
       const res = await fetch(`${backendUrl}/api/v1/estimates/send-telegram-pdf`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          room_name: roomName,
-          length: numLength,
-          width: numWidth,
-          height: numHeight,
-          total_area: estimate.geometry.totalWorkArea,
+          room_name: rooms.length > 1
+            ? `${rooms.length} ta xona (${rooms.map(r => r.input.roomName).join(', ')})`
+            : rooms[0]?.input.roomName || "Xona",
+          length: activeRoom?.input.length || 0,
+          width: activeRoom?.input.width || 0,
+          height: activeRoom?.input.height || 0,
+          total_area: projectSummary.totalWorkArea,
           brand_name: brandName,
           master_phone: masterPhone,
           materials: materialsPayload,
           labor_items: laborPayload,
-          materials_total: formatUZS(estimate.materialsTotal),
-          labor_total: formatUZS(estimate.laborTotal),
-          grand_total: formatUZS(estimate.grandTotal),
+          materials_total: formatUZS(projectSummary.materialsGrandTotal),
+          labor_total: formatUZS(projectSummary.laborGrandTotal),
+          grand_total: formatUZS(projectSummary.projectGrandTotal),
         }),
       });
-
       const data = await res.json();
       if (res.ok && (data.ok || data.success)) {
         triggerNotificationHaptic("success");
         setPdfStatusMsg("✅ PDF-smeta Telegram xabaringizga yuborildi! Chatga o'tib ko'rishingiz mumkin.");
-        setTimeout(() => {
-          setShowPdfModal(false);
-          setPdfStatusMsg("");
-        }, 3000);
+        setTimeout(() => { setShowPdfModal(false); setPdfStatusMsg(""); }, 3000);
       } else {
         throw new Error(data.detail || data.message || "Serverdan xatolik qaytdi");
       }
@@ -641,10 +1131,7 @@ export default function Smeta24MiniApp() {
     }
   };
 
-  const handlePrintPdf = () => {
-    triggerHaptic("light");
-    window.print();
-  };
+  const handlePrintPdf = () => { triggerHaptic("light"); window.print(); };
 
   const handleTopup = (amount: number) => {
     triggerNotificationHaptic("success");
@@ -652,9 +1139,11 @@ export default function Smeta24MiniApp() {
     setShowTopupModal(false);
   };
 
+  const roomColor = ROOM_COLORS[activeRoomIndex % ROOM_COLORS.length] || ROOM_COLORS[0];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-28 font-sans selection:bg-amber-500 selection:text-slate-950">
-      {/* 1. STICKY TOP APP HEADER */}
+      {/* STICKY TOP APP HEADER */}
       <header className="sticky top-0 z-30 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-slate-950 font-black text-lg shadow-lg shadow-amber-500/25">
@@ -674,13 +1163,8 @@ export default function Smeta24MiniApp() {
             </p>
           </div>
         </div>
-
-        {/* User Balance Chip */}
         <button
-          onClick={() => {
-            triggerHaptic("light");
-            setShowTopupModal(true);
-          }}
+          onClick={() => { triggerHaptic("light"); setShowTopupModal(true); }}
           className="flex items-center gap-1.5 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-xl px-3 py-1.5 transition active:scale-95 text-right"
         >
           <div>
@@ -693,774 +1177,515 @@ export default function Smeta24MiniApp() {
         </button>
       </header>
 
-      {/* Saqlash Toast Bildirishnomasi */}
+      {/* Toast */}
       {saveToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-slate-950 font-bold text-xs px-4 py-1.5 rounded-full shadow-lg animate-in fade-in slide-in-from-top-2">
           {saveToast}
         </div>
       )}
 
-      {/* 2. MAIN CONTENT BY ACTIVE TAB */}
+      {/* MAIN CONTENT */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {activeTab === "calc" && (
           <>
-            {/* Tezkor Shablonlar */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap pl-0.5">
-                Shablon:
-              </span>
-              {presets.map((p) => (
+            {/* ===== LOYIHA BOSHQARUVI BAR ===== */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-md flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                  <FolderOpen className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1.5 font-medium">
+                    <span>Loyiha:</span>
+                    <span className="text-amber-400 font-semibold">{rooms.length} ta xona</span>
+                  </div>
+                  <h3 className="text-xs font-bold text-white truncate max-w-[130px]" title={currentProjectName}>
+                    {currentProjectName}
+                  </h3>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 <button
-                  key={p.name}
-                  onClick={() => applyPreset(p)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${
-                    roomName === p.name
-                      ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/20"
-                      : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700"
-                  }`}
+                  onClick={() => { triggerHaptic("light"); setShowProjectsModal(true); }}
+                  className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95"
                 >
-                  {p.name}
+                  <FolderArchive className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Smetalarim</span>
+                  {savedProjects.length > 0 && (
+                    <span className="bg-amber-500 text-slate-950 text-[9px] font-black px-1.5 py-0.2 rounded-full ml-0.5">
+                      {savedProjects.length}
+                    </span>
+                  )}
                 </button>
-              ))}
+                <button
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    setProjectNameInput(currentProjectName);
+                    setShowSaveProjectModal(true);
+                  }}
+                  className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-xl shadow-sm shadow-emerald-600/20 transition active:scale-95"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Saqlash</span>
+                </button>
+              </div>
             </div>
 
-            {/* 1-BLOK: XONA GEOMETRIYASI (O'chirilganda 0 chiqmaydigan, toza inputlar) */}
-            <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+            {/* ===== KO'P XONALI TABLAR ===== */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 shadow-md space-y-3">
+              {/* Header */}
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
-                    1
-                  </div>
-                  <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                    Xona O&apos;lchamlari
+                  <LayoutGrid className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Xonalar ({rooms.length})
                   </h2>
                 </div>
-                <input
-                  type="text"
-                  value={roomName}
-                  onChange={(e) => setRoomName(e.target.value)}
-                  className="bg-slate-950 text-xs text-right px-2.5 py-1 rounded-lg border border-slate-700 text-white font-medium focus:outline-none focus:border-amber-500 w-36"
-                  placeholder="Xona nomi"
-                />
+                <button
+                  onClick={addRoom}
+                  disabled={rooms.length >= 8}
+                  className="flex items-center gap-1 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-[11px] px-3 py-1.5 rounded-xl shadow-sm transition active:scale-95"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Xona qo&apos;shish</span>
+                </button>
               </div>
 
-              {/* 3 ta o'lcham - inputMode decimal va toza tozalash */}
-              <div className="grid grid-cols-3 gap-2.5">
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Uzunligi (L)</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={length}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => handleDecimalChange(e.target.value, setLength)}
-                      placeholder="0"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
-                    />
-                    <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Eni (W)</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={width}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => handleDecimalChange(e.target.value, setWidth)}
-                      placeholder="0"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
-                    />
-                    <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Balandligi (H)</label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={height}
-                      onFocus={(e) => e.target.select()}
-                      onChange={(e) => handleDecimalChange(e.target.value, setHeight)}
-                      placeholder="0"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-6"
-                    />
-                    <span className="absolute right-2 top-2.5 text-[10px] text-slate-500 font-medium">m</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Eshik va deraza o'lchamlari */}
-              <div>
-                <label className="text-[10px] text-slate-400 block mb-1">
-                  Eshik va Derazalar jami yuzasi (devor maydonidan chegiriladi)
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={openingsArea}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => handleDecimalChange(e.target.value, setOpeningsArea)}
-                    placeholder="0"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none pr-8"
-                  />
-                  <span className="absolute right-3 top-2.5 text-[10px] text-slate-500 font-medium">m²</span>
-                </div>
-              </div>
-
-              {/* Live Kvadratura ko'rsatkichlari */}
-              <div className="bg-slate-950 rounded-xl p-2.5 grid grid-cols-4 text-center border border-slate-800/80">
-                <div>
-                  <span className="text-[9px] text-slate-400 block">Perimetr</span>
-                  <span className="text-xs font-bold text-slate-200">{estimate.geometry.perimeter} m</span>
-                </div>
-                <div className="border-x border-slate-800">
-                  <span className="text-[9px] text-slate-400 block">Sof devor</span>
-                  <span className="text-xs font-bold text-slate-200">{estimate.geometry.netWallArea} m²</span>
-                </div>
-                <div className="border-r border-slate-800">
-                  <span className="text-[9px] text-slate-400 block">Shift / Pol</span>
-                  <span className="text-xs font-bold text-slate-200">{estimate.geometry.ceilingArea} m²</span>
-                </div>
-                <div>
-                  <span className="text-[9px] text-amber-400 block font-semibold">Plintus</span>
-                  <span className="text-xs font-black text-amber-400">{estimate.geometry.plinthLength} m</span>
-                </div>
-              </div>
-            </section>
-
-            {/* 2-BLOK: ☁️ SHIFT (POTOLOK) ISHLARI */}
-            <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-sky-500/10 text-sky-400 flex items-center justify-center font-bold text-xs">
-                    ☁️
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-bold text-sky-400 uppercase tracking-wider">
-                      Shift (Potolok) Ishlari
-                    </h2>
-                    <p className="text-[10px] text-slate-400">Maydon: {estimate.geometry.ceilingArea} m²</p>
-                  </div>
-                </div>
-                {ceilingWork !== "none" && (
-                  <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
-                    Faol
-                  </span>
-                )}
-              </div>
-
-              {/* Shift variantlari */}
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    id: "gipsokarton_plain" as CeilingWorkType,
-                    title: "Gipskarton Tekis",
-                    sub: "Knauf 1-qavat karkas",
-                    badge: "Ko'p tanlangan",
-                  },
-                  {
-                    id: "gipsokarton_decor" as CeilingWorkType,
-                    title: "Gipskarton Figurali",
-                    sub: "2-qavat naqshli dizayn",
-                    badge: "Dizayn",
-                  },
-                  {
-                    id: "paint_spray" as CeilingWorkType,
-                    title: "Bo'yoq (Kraskapult)",
-                    sub: "Shpaklyovka + Sepish",
-                    badge: null,
-                  },
-                  {
-                    id: "paint_roller" as CeilingWorkType,
-                    title: "Bo'yoq (Valikda)",
-                    sub: "Shpaklyovka + Valik",
-                    badge: null,
-                  },
-                  {
-                    id: "stretch" as CeilingWorkType,
-                    title: "Natyajnoy potolok",
-                    sub: "Fransuz plyonka + montaj",
-                    badge: null,
-                  },
-                  {
-                    id: "none" as CeilingWorkType,
-                    title: "Shiftga tegilmaydi",
-                    sub: "Hisobdan chiqarish",
-                    badge: null,
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      triggerHaptic("medium");
-                      setCeilingWork(item.id);
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between relative ${
-                      ceilingWork === item.id
-                        ? "bg-gradient-to-br from-sky-950 to-slate-900 border-sky-400 text-white shadow-md shadow-sky-500/10 ring-1 ring-sky-500/30"
-                        : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
-                    }`}
-                  >
-                    {item.badge && (
-                      <span className="absolute -top-1.5 right-2 bg-amber-500 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                    <span className="text-xs font-bold leading-tight">{item.title}</span>
-                    <span className="text-[9.5px] text-slate-400 mt-1">{item.sub}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* 3-BLOK: 🧱 DEVOR ISHLARI */}
-            <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
-                    🧱
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                      Devor Ishlari & Qoplamalar
-                    </h2>
-                    <p className="text-[10px] text-slate-400">Sof maydon: {estimate.geometry.netWallArea} m²</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Asosiy devor qoplamasi */}
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  {
-                    id: "paint_spray" as WallWorkType,
-                    title: "Bo'yoq (Kraskapult)",
-                    sub: "Sepish",
-                    badge: "Hit",
-                  },
-                  {
-                    id: "paint_roller" as WallWorkType,
-                    title: "Bo'yoq (Valik)",
-                    sub: "Klassik",
-                    badge: null,
-                  },
-                  {
-                    id: "wallpaper" as WallWorkType,
-                    title: "Oboy",
-                    sub: "Vinil/Flizelin",
-                    badge: null,
-                  },
-                  {
-                    id: "tile" as WallWorkType,
-                    title: "Kafel / Plitka",
-                    sub: "Keramogranit",
-                    badge: null,
-                  },
-                  {
-                    id: "paint_standard" as WallWorkType,
-                    title: "Standart emulsiya",
-                    sub: "Start+Finish",
-                    badge: null,
-                  },
-                  {
-                    id: "none" as WallWorkType,
-                    title: "Tegilmaydi",
-                    sub: "Hisobdan chiqarish",
-                    badge: null,
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      triggerHaptic("medium");
-                      setWallWork(item.id);
-                    }}
-                    className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center relative ${
-                      wallWork === item.id
-                        ? "bg-gradient-to-b from-amber-500 to-amber-600 text-slate-950 border-amber-400 font-bold shadow-md shadow-amber-500/20"
-                        : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
-                    }`}
-                  >
-                    {item.badge && (
-                      <span className="absolute -top-1.5 right-1.5 bg-emerald-500 text-slate-950 text-[7.5px] font-black px-1.5 py-0.2 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                    <span className="text-xs leading-tight">{item.title}</span>
-                    <span
-                      className={`text-[8.5px] mt-0.5 ${
-                        wallWork === item.id ? "text-slate-950 font-medium" : "text-slate-500"
-                      }`}
-                    >
-                      {item.sub}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Devor uchun qo'shimcha qatlamlar */}
-              <div className="space-y-2 pt-1">
-                {/* 1. Suvoq (Rotband) */}
-                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includePlaster}
-                        onChange={(e) => {
-                          triggerHaptic("light");
-                          setIncludePlaster(e.target.checked);
-                        }}
-                        className="w-4 h-4 accent-amber-500 rounded"
-                      />
-                      <span className="text-xs font-semibold text-slate-200">
-                        Mayoq bo&apos;yicha gipsli suvoq (Rotband)
-                      </span>
-                    </label>
-                    <span className="text-[10px] text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded">
-                      Gips
-                    </span>
-                  </div>
-
-                  {includePlaster && (
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs">
-                      <span className="text-[10px] text-slate-400">Qatlam qalinligi:</span>
-                      <div className="flex items-center gap-1.5">
-                        {[0.5, 1.0, 1.5, 2.0].map((val) => (
-                          <button
-                            key={val}
-                            type="button"
-                            onClick={() => setPlasterThickness(val)}
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                              plasterThickness === val
-                                ? "bg-amber-500 text-slate-950 border-amber-400"
-                                : "bg-slate-900 text-slate-400 border-slate-800"
-                            }`}
-                          >
-                            {val} sm
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. Pautinka (Stekloxolst) */}
-                {(wallWork === "paint_spray" || wallWork === "paint_roller") && (
-                  <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includePautinka}
-                        onChange={(e) => {
-                          triggerHaptic("light");
-                          setIncludePautinka(e.target.checked);
-                        }}
-                        className="w-4 h-4 accent-amber-500 rounded"
-                      />
-                      <div>
-                        <span className="text-xs font-semibold text-slate-200 block">
-                          Stekloxolst (Pautinka) yopishtirish
-                        </span>
-                        <span className="text-[9.5px] text-slate-500">
-                          Devor yorilishiga qarshi + maxsus tayyor kley
-                        </span>
-                      </div>
-                    </label>
-                    <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                      Tavsiya
-                    </span>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* 4-BLOK: 🪵 POL ISHLARI */}
-            <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
-                    🪵
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                      Pol (Floor) Ishlari
-                    </h2>
-                    <p className="text-[10px] text-slate-400">Maydon: {estimate.geometry.floorArea} m²</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Pol qoplamasi variantlari */}
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    id: "laminate" as FloorWorkType,
-                    title: "Laminat (33-klass)",
-                    sub: "Podlojka + Plintus",
-                    badge: "Mashhur",
-                  },
-                  {
-                    id: "parquet" as FloorWorkType,
-                    title: "Parket / Inzhener",
-                    sub: "Tabiiy yog'och + 2K yelim",
-                    badge: "Premium",
-                  },
-                  {
-                    id: "tile" as FloorWorkType,
-                    title: "Polga Kafel / Plitka",
-                    sub: "Keramogranit + kley",
-                    badge: null,
-                  },
-                  {
-                    id: "none" as FloorWorkType,
-                    title: "Polga tegilmaydi",
-                    sub: "Hisobdan chiqarish",
-                    badge: null,
-                  },
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      triggerHaptic("medium");
-                      setFloorWork(item.id);
-                    }}
-                    className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between relative ${
-                      floorWork === item.id
-                        ? "bg-gradient-to-br from-emerald-950 to-slate-900 border-emerald-400 text-white shadow-md shadow-emerald-500/10 ring-1 ring-emerald-500/30"
-                        : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
-                    }`}
-                  >
-                    {item.badge && (
-                      <span className="absolute -top-1.5 right-2 bg-amber-500 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-full">
-                        {item.badge}
-                      </span>
-                    )}
-                    <span className="text-xs font-bold leading-tight">{item.title}</span>
-                    <span className="text-[9.5px] text-slate-400 mt-1">{item.sub}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Pol tayyorgarligi optsiyalari */}
-              <div className="space-y-2 pt-1">
-                {/* 1. Styajka */}
-                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeScreed}
-                      onChange={(e) => {
-                        triggerHaptic("light");
-                        setIncludeScreed(e.target.checked);
-                      }}
-                      className="w-4 h-4 accent-emerald-500 rounded"
-                    />
-                    <div>
-                      <span className="text-xs font-semibold text-slate-200 block">
-                        Pol steshkasi (Beton styajka, ~5 sm)
-                      </span>
-                      <span className="text-[9.5px] text-slate-500">
-                        Tsement M400 + daryo qumi + mustahkamlovchi to&apos;r
-                      </span>
-                    </div>
-                  </label>
-                  <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.5 rounded">
-                    5 sm
-                  </span>
-                </div>
-
-                {/* 2. Nalivnoy pol */}
-                <div className="bg-slate-950 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={includeSelfLeveling}
-                      onChange={(e) => {
-                        triggerHaptic("light");
-                        setIncludeSelfLeveling(e.target.checked);
-                      }}
-                      className="w-4 h-4 accent-emerald-500 rounded"
-                    />
-                    <div>
-                      <span className="text-xs font-semibold text-slate-200 block">
-                        Nalivnoy pol (Samonivelir tekislash)
-                      </span>
-                      <span className="text-[9.5px] text-slate-500">
-                        Laminat yoki parket ostiga yupqa oyna tekislik
-                      </span>
-                    </div>
-                  </label>
-                  <span className="text-[10px] text-sky-400 font-medium bg-sky-500/10 px-1.5 py-0.5 rounded">
-                    3 mm
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {/* 5-BLOK: 🏷️ MATERIALLAR TARIFA & PROFILGA O'TISH */}
-            <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-              <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
-                    ⚙️
-                  </div>
-                  <div>
-                    <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                      Material Segmenti & Usta PRO
-                    </h2>
-                    <p className="text-[10px] text-slate-400">Brending va shaxsiy narxlar boshqaruvi</p>
-                  </div>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={isMasterMode}
-                  onChange={(e) => {
-                    triggerHaptic("light");
-                    setIsMasterMode(e.target.checked);
-                  }}
-                  className="w-5 h-5 accent-amber-500 rounded cursor-pointer"
-                />
-              </div>
-
-              {/* Segment */}
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-400">Materiallar segmenti:</span>
-                <div className="flex items-center gap-1">
-                  {(["econom", "standard", "premium"] as QualityTier[]).map((t) => (
+              {/* Horizontal scrollable room tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {rooms.map((room, idx) => {
+                  const color = ROOM_COLORS[idx % ROOM_COLORS.length];
+                  const isActive = room.id === activeRoomId && !showSummary;
+                  const roomEst = roomEstimates.find((r) => r.id === room.id);
+                  return (
                     <button
-                      key={t}
+                      key={room.id}
                       onClick={() => {
                         triggerHaptic("light");
-                        setTier(t);
+                        setActiveRoomId(room.id);
+                        setShowSummary(false);
                       }}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition border ${
-                        tier === t
-                          ? "bg-slate-800 text-amber-400 border-amber-500/50 shadow-sm"
-                          : "bg-slate-950 text-slate-400 border-slate-800"
+                      className={`flex-shrink-0 px-3 py-2 rounded-xl border transition-all duration-200 min-w-[120px] text-left relative group ${
+                        isActive
+                          ? `bg-gradient-to-br ${color.bg} ${color.border} shadow-md ring-1 ring-white/10`
+                          : "bg-slate-950 border-slate-800 hover:border-slate-700"
                       }`}
                     >
-                      {t === "econom" ? "Ekonom" : t === "standard" ? "Standart" : "Premium"}
+                      {/* X tugma */}
+                      {rooms.length > 1 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeRoom(room.id); }}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-slate-800 hover:bg-rose-500 border border-slate-700 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                        >
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-2 h-2 rounded-full ${isActive ? color.activeBg : "bg-slate-700"}`} />
+                        <span className={`text-xs font-bold truncate max-w-[80px] ${isActive ? color.text : "text-slate-300"}`}>
+                          {room.input.roomName}
+                        </span>
+                      </div>
+                      <p className={`text-[9.5px] mt-0.5 ${isActive ? "text-slate-300" : "text-slate-500"}`}>
+                        {roomEst ? formatUZS(roomEst.estimate.grandTotal) : "—"}
+                      </p>
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
+
+                {/* UMUMIY SMETA TAB */}
+                {rooms.length > 1 && (
+                  <button
+                    onClick={() => {
+                      triggerHaptic("medium");
+                      setShowSummary(true);
+                    }}
+                    className={`flex-shrink-0 px-3 py-2 rounded-xl border transition-all duration-200 min-w-[120px] text-left ${
+                      showSummary
+                        ? "bg-gradient-to-br from-amber-500/20 to-amber-600/5 border-amber-500/50 shadow-md ring-1 ring-amber-500/20"
+                        : "bg-slate-950 border-slate-800 hover:border-amber-500/30"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className={`w-3 h-3 ${showSummary ? "text-amber-400" : "text-slate-500"}`} />
+                      <span className={`text-xs font-bold ${showSummary ? "text-amber-400" : "text-slate-400"}`}>
+                        Umumiy
+                      </span>
+                    </div>
+                    <p className={`text-[9.5px] mt-0.5 font-bold ${showSummary ? "text-amber-300" : "text-slate-500"}`}>
+                      {formatUZS(projectSummary.projectGrandTotal)}
+                    </p>
+                  </button>
+                )}
               </div>
 
-              {isMasterMode && (
-                <div className="space-y-3 pt-2 border-t border-slate-800/80">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Brigada / Usta nomi</label>
-                      <input
-                        type="text"
-                        value={brandName}
-                        onChange={(e) => {
-                          setBrandName(e.target.value);
-                          localStorage.setItem("smeta24_brand_name", e.target.value);
-                        }}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-slate-400 block mb-1">Telefon raqamingiz</label>
-                      <input
-                        type="text"
-                        value={masterPhone}
-                        onChange={(e) => {
-                          setMasterPhone(e.target.value);
-                          localStorage.setItem("smeta24_master_phone", e.target.value);
-                        }}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
-                      />
-                    </div>
+              {/* Xona uchun tezkor amallar */}
+              {!showSummary && activeRoom && (
+                <div className="flex items-center gap-2 border-t border-slate-800/60 pt-2">
+                  <button
+                    onClick={() => duplicateRoom(activeRoomId)}
+                    className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-sky-400 transition"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>Nusxalash</span>
+                  </button>
+                  {rooms.length > 1 && (
+                    <button
+                      onClick={() => removeRoom(activeRoomId)}
+                      className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-rose-400 transition"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>O&apos;chirish</span>
+                    </button>
+                  )}
+                  <div className="ml-auto text-[10px] text-slate-500">
+                    {activeRoomIndex + 1}/{rooms.length}
                   </div>
+                </div>
+              )}
+            </div>
 
-                  {/* Profil narxlari boshqaruviga to'g'ridan-to'g'ri o'tish */}
+            {/* ===== UMUMIY SMETA KO'RINISHI ===== */}
+            {showSummary ? (
+              <section className="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-4 space-y-4 shadow-xl shadow-amber-500/5">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    <h2 className="text-sm font-bold text-white tracking-tight">
+                      Umumiy Loyiha Smetasi
+                    </h2>
+                  </div>
+                  <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-semibold">
+                    {rooms.length} xona • {projectSummary.totalWorkArea} m²
+                  </span>
+                </div>
+
+                {/* Xonalar bo'yicha statistika */}
+                <div className="space-y-2">
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
+                    Xonalar bo&apos;yicha taqsimot:
+                  </span>
+                  {projectSummary.roomBreakdown.map((rb, idx) => {
+                    const color = ROOM_COLORS[idx % ROOM_COLORS.length];
+                    return (
+                      <div
+                        key={rb.roomId}
+                        className={`bg-slate-950 p-3 rounded-xl border border-slate-800/80 flex items-center justify-between`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2.5 h-2.5 rounded-full ${color.activeBg}`} />
+                          <div>
+                            <p className="text-xs font-bold text-white">{rb.roomName}</p>
+                            <p className="text-[10px] text-slate-400">{rb.floorArea} m² pol maydoni</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-black text-amber-400">{formatUZS(rb.grandTotal)}</p>
+                          <p className="text-[9px] text-slate-500">
+                            Mat: {formatUZS(rb.materialsTotal)} • Ish: {formatUZS(rb.laborTotal)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Umumiy geometrik ko'rsatkichlar */}
+                <div className="bg-slate-950 rounded-xl p-3 grid grid-cols-3 text-center border border-slate-800/80 gap-2">
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Umumiy pol</span>
+                    <span className="text-xs font-bold text-emerald-400">{projectSummary.totalFloorArea} m²</span>
+                  </div>
+                  <div className="border-x border-slate-800">
+                    <span className="text-[9px] text-slate-400 block">Umumiy devor</span>
+                    <span className="text-xs font-bold text-sky-400">{projectSummary.totalWallArea} m²</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-400 block">Umumiy shift</span>
+                    <span className="text-xs font-bold text-violet-400">{projectSummary.totalCeilingArea} m²</span>
+                  </div>
+                </div>
+
+                {/* Umumiy summalar */}
+                <div className="border-t border-slate-800 pt-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between text-slate-300">
+                    <span>Materiallar umumiy summasi ({rooms.length} xona):</span>
+                    <span className="font-bold text-white">{formatUZS(projectSummary.materialsGrandTotal)}</span>
+                  </div>
+                  {isMasterMode && (
+                    <div className="flex justify-between text-slate-300">
+                      <span>Usta ish haqi jami:</span>
+                      <span className="font-bold text-emerald-400">{formatUZS(projectSummary.laborGrandTotal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-black text-amber-400 pt-2 border-t border-slate-800/80">
+                    <span>LOYIHA BUDJETI:</span>
+                    <span className="text-base">{formatUZS(projectSummary.projectGrandTotal)}</span>
+                  </div>
+                </div>
+
+                {/* PDF va Buyurtma tugmalari */}
+                <div className="space-y-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic("light");
-                      setActiveTab("profile");
-                    }}
-                    className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/50 rounded-xl p-2.5 text-xs font-semibold text-amber-400 flex items-center justify-between transition"
+                    onClick={isUnlocked ? () => setShowPdfModal(true) : handleUnlockPdf}
+                    className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition active:scale-[0.98]"
                   >
-                    <div className="flex items-center gap-2">
-                      <Settings className="w-4 h-4 text-amber-400" />
-                      <span>Usta va Tuman material narxlarini sozlash</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">Profilga o&apos;tish →</span>
+                    <FileText className="w-4 h-4 text-slate-950" />
+                    <span>{isUnlocked ? "Tayyor Brendli PDF-Smetani ko'rish" : "📄 Brendli PDF-Smetani olish (5 000 so'm)"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { triggerHaptic("light"); setShowLeadModal(true); }}
+                    className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-3 px-4 rounded-xl border border-slate-700/80 flex items-center justify-center gap-2 transition active:scale-[0.98]"
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5 text-amber-400" />
+                    <span>🛒 Materiallarni ulgurji narxda buyurtma qilish (Bepul)</span>
                   </button>
                 </div>
-              )}
-            </section>
+              </section>
+            ) : (
+              <>
+                {/* ===== TANLANGAN XONA FORMI ===== */}
+                {activeRoom && activeRoomEstimate && (
+                  <RoomInputForm
+                    input={activeRoom.input}
+                    onUpdate={(updates) => updateRoomInput(activeRoomId, updates)}
+                    estimate={activeRoomEstimate.estimate}
+                    isUnlocked={isUnlocked}
+                    onUnlock={handleUnlockPdf}
+                    isMasterMode={isMasterMode}
+                    roomColor={roomColor}
+                  />
+                )}
 
-            {/* 6-BLOK: SMETA NATIJALARI (HISOBLASH VA PREVIEW) */}
-            <section className="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-4 space-y-3.5 shadow-xl shadow-amber-500/5 relative overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <h2 className="text-sm font-bold text-white tracking-tight">
-                    Smeta24 Hisob Natijasi
-                  </h2>
-                </div>
-                <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-semibold">
-                  {roomName} ({estimate.geometry.totalWorkArea} m²)
-                </span>
-              </div>
-
-              {/* Materiallar jadvali */}
-              <div className="space-y-2">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
-                  Talab qilinadigan materiallar ro&apos;yxati ({estimate.materials.length} ta pozitsiya):
-                </span>
-                {estimate.materials.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-xs transition hover:border-slate-700"
-                  >
-                    <div className="pr-2">
-                      <p className="font-semibold text-slate-200 leading-snug">{item.name}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        Sof sarf: <span className="text-slate-300 font-medium">{item.exactUnitStr}</span>
-                      </p>
+                {/* MATERIAL SEGMENTI & USTA PRO */}
+                <section className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-xs">
+                        ⚙️
+                      </div>
+                      <div>
+                        <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                          Material Segmenti &amp; Usta PRO
+                        </h2>
+                        <p className="text-[10px] text-slate-400">Brending va shaxsiy narxlar boshqaruvi</p>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      {isUnlocked ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded text-[11px]">
-                          <CheckCircle2 className="w-3 h-3" />
-                          {item.packagesCount} {item.unit}
-                        </span>
-                      ) : (
-                        <div
-                          onClick={handleUnlockPdf}
-                          className="cursor-pointer group relative inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-2 py-0.5 rounded transition"
+                    <input
+                      type="checkbox"
+                      checked={isMasterMode}
+                      onChange={(e) => { triggerHaptic("light"); setIsMasterMode(e.target.checked); }}
+                      className="w-5 h-5 accent-amber-500 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] text-slate-400">Materiallar segmenti:</span>
+                    <div className="flex items-center gap-1">
+                      {(["econom", "standard", "premium"] as QualityTier[]).map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => { triggerHaptic("light"); setTier(t); }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase transition border ${
+                            tier === t
+                              ? "bg-slate-800 text-amber-400 border-amber-500/50 shadow-sm"
+                              : "bg-slate-950 text-slate-400 border-slate-800"
+                          }`}
                         >
-                          <Lock className="w-2.5 h-2.5 text-amber-400" />
-                          <span className="blur-[3.5px] select-none text-[11px]">
-                            {item.packagesCount} {item.unit}
-                          </span>
+                          {t === "econom" ? "Ekonom" : t === "standard" ? "Standart" : "Premium"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {isMasterMode && (
+                    <div className="space-y-3 pt-2 border-t border-slate-800/80">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">Brigada / Usta nomi</label>
+                          <input
+                            type="text"
+                            value={brandName}
+                            onChange={(e) => { setBrandName(e.target.value); localStorage.setItem("smeta24_brand_name", e.target.value); }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-1">Telefon raqamingiz</label>
+                          <input
+                            type="text"
+                            value={masterPhone}
+                            onChange={(e) => { setMasterPhone(e.target.value); localStorage.setItem("smeta24_master_phone", e.target.value); }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white focus:border-amber-500 outline-none font-medium"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { triggerHaptic("light"); setActiveTab("profile"); }}
+                        className="w-full bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/50 rounded-xl p-2.5 text-xs font-semibold text-amber-400 flex items-center justify-between transition"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-4 h-4 text-amber-400" />
+                          <span>Usta va Tuman material narxlarini sozlash</span>
+                        </div>
+                        <span className="text-[11px] text-slate-400">Profilga o&apos;tish →</span>
+                      </button>
+                    </div>
+                  )}
+                </section>
+
+                {/* SMETA NATIJALARI (Joriy xona) */}
+                {activeRoomEstimate && (
+                  <section className="bg-slate-900/90 border border-amber-500/40 rounded-2xl p-4 space-y-3.5 shadow-xl shadow-amber-500/5 relative overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <h2 className="text-sm font-bold text-white tracking-tight">
+                          {activeRoom?.input.roomName || "Xona"} — Smeta
+                        </h2>
+                      </div>
+                      <span className="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-semibold">
+                        {activeRoomEstimate.estimate.geometry.totalWorkArea} m²
+                      </span>
+                    </div>
+
+                    {/* Materiallar */}
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
+                        Talab qilinadigan materiallar ({activeRoomEstimate.estimate.materials.length} ta):
+                      </span>
+                      {activeRoomEstimate.estimate.materials.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-xs transition hover:border-slate-700">
+                          <div className="pr-2">
+                            <p className="font-semibold text-slate-200 leading-snug">{item.name}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              Sof sarf: <span className="text-slate-300 font-medium">{item.exactUnitStr}</span>
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            {isUnlocked ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded text-[11px]">
+                                <CheckCircle2 className="w-3 h-3" />
+                                {item.packagesCount} {item.unit}
+                              </span>
+                            ) : (
+                              <div onClick={handleUnlockPdf} className="cursor-pointer group relative inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-2 py-0.5 rounded transition">
+                                <Lock className="w-2.5 h-2.5 text-amber-400" />
+                                <span className="blur-[3.5px] select-none text-[11px]">{item.packagesCount} {item.unit}</span>
+                              </div>
+                            )}
+                            <p className="text-[11px] text-slate-300 font-bold mt-0.5">{formatUZS(item.totalPrice)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Usta xizmati */}
+                    {isMasterMode && activeRoomEstimate.estimate.laborItems.length > 0 && (
+                      <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-800/80 space-y-1.5 text-xs">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
+                          Bajariladigan ishlar:
+                        </span>
+                        {activeRoomEstimate.estimate.laborItems.map((lab) => (
+                          <div key={lab.id} className="flex justify-between text-slate-300 text-[11px]">
+                            <span>{lab.name}:</span>
+                            <span className="font-medium text-emerald-400">{formatUZS(lab.totalPrice)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Jami (joriy xona) */}
+                    <div className="border-t border-slate-800 pt-3 space-y-1.5 text-xs">
+                      <div className="flex justify-between text-slate-300">
+                        <span>Materiallar summasi:</span>
+                        <span className="font-bold text-white">{formatUZS(activeRoomEstimate.estimate.materialsTotal)}</span>
+                      </div>
+                      {isMasterMode && (
+                        <div className="flex justify-between text-slate-300">
+                          <span>Usta ish haqi:</span>
+                          <span className="font-bold text-emerald-400">{formatUZS(activeRoomEstimate.estimate.laborTotal)}</span>
                         </div>
                       )}
-                      <p className="text-[11px] text-slate-300 font-bold mt-0.5">
-                        {formatUZS(item.totalPrice)}
-                      </p>
+                      <div className="flex justify-between text-sm font-black text-amber-400 pt-2 border-t border-slate-800/80">
+                        <span>{activeRoom?.input.roomName} JAMI:</span>
+                        <span className="text-base">{formatUZS(activeRoomEstimate.estimate.grandTotal)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
 
-              {/* Usta xizmati detallari */}
-              {isMasterMode && estimate.laborItems.length > 0 && (
-                <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-800/80 space-y-1.5 text-xs">
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
-                    Bajariladigan ishlar va xizmat haqi:
-                  </span>
-                  {estimate.laborItems.map((lab) => (
-                    <div key={lab.id} className="flex justify-between text-slate-300 text-[11px]">
-                      <span>{lab.name}:</span>
-                      <span className="font-medium text-emerald-400">{formatUZS(lab.totalPrice)}</span>
+                    {/* Umumiy loyiha summasi (multi-room) */}
+                    {rooms.length > 1 && (
+                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-1 text-xs">
+                        <div className="flex justify-between text-amber-300 font-bold">
+                          <span>📊 BUTUN LOYIHA ({rooms.length} xona):</span>
+                          <span className="text-sm">{formatUZS(projectSummary.projectGrandTotal)}</span>
+                        </div>
+                        <button
+                          onClick={() => { triggerHaptic("light"); setShowSummary(true); }}
+                          className="text-[10px] text-amber-400 underline hover:text-amber-300"
+                        >
+                          Batafsil ko&apos;rish →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Tugmalar */}
+                    <div className="space-y-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={isUnlocked ? () => setShowPdfModal(true) : handleUnlockPdf}
+                        className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition active:scale-[0.98]"
+                      >
+                        <FileText className="w-4 h-4 text-slate-950" />
+                        <span>{isUnlocked ? "Tayyor Brendli PDF-Smetani ko'rish" : "📄 PDF-Smeta (5 000 so'm)"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { triggerHaptic("light"); setShowLeadModal(true); }}
+                        className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-3 px-4 rounded-xl border border-slate-700/80 flex items-center justify-center gap-2 transition active:scale-[0.98]"
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5 text-amber-400" />
+                        <span>🛒 Materiallarni ulgurji narxda buyurtma qilish</span>
+                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Jami Summalar */}
-              <div className="border-t border-slate-800 pt-3 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-300">
-                  <span>Materiallar umumiy summasi:</span>
-                  <span className="font-bold text-white">{formatUZS(estimate.materialsTotal)}</span>
-                </div>
-                {isMasterMode && (
-                  <div className="flex justify-between text-slate-300">
-                    <span>Usta ish haqi jami:</span>
-                    <span className="font-bold text-emerald-400">{formatUZS(estimate.laborTotal)}</span>
-                  </div>
+                  </section>
                 )}
-                <div className="flex justify-between text-sm font-black text-amber-400 pt-2 border-t border-slate-800/80">
-                  <span>UMUMIY SMETA BUDJETI:</span>
-                  <span className="text-base">{formatUZS(estimate.grandTotal)}</span>
+
+                {/* Dastur muallifi */}
+                <div className="text-center py-1 text-[10.5px] text-slate-500">
+                  Smeta24 © 2026 • Dastur muallifi:{" "}
+                  <span className="text-amber-400 font-bold">Nurmurodov Damirjon</span>
                 </div>
-              </div>
-
-              {/* 2 TA ASOSIY TUGMA */}
-              <div className="space-y-2 pt-2">
-                <button
-                  type="button"
-                  onClick={isUnlocked ? () => setShowPdfModal(true) : handleUnlockPdf}
-                  className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition active:scale-[0.98]"
-                >
-                  {isUnlocked ? (
-                    <>
-                      <FileText className="w-4 h-4 text-slate-950" />
-                      <span>Tayyor Brendli PDF-Smetani ko&apos;rish</span>
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="w-4 h-4 text-slate-950" />
-                      <span>📄 Brendli PDF-Smetani olish (5 000 so&apos;m)</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("light");
-                    setShowLeadModal(true);
-                  }}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-3 px-4 rounded-xl border border-slate-700/80 flex items-center justify-center gap-2 transition active:scale-[0.98]"
-                >
-                  <ShoppingBag className="w-3.5 h-3.5 text-amber-400" />
-                  <span>🛒 Materiallarni ulgurji narxda buyurtma qilish (Bepul)</span>
-                </button>
-              </div>
-            </section>
-
-            {/* DASTUR MUALLIFI */}
-            <div className="text-center py-1 text-[10.5px] text-slate-500">
-              Smeta24 © 2026 • Dastur muallifi:{" "}
-              <span className="text-amber-400 font-bold">Nurmurodov Damirjon</span>
-            </div>
+              </>
+            )}
           </>
         )}
 
-        {/* PROFIL TAB: USTA NARXLARI VA TUMAN MATERIAL NARXLARI SOZLAMALARI */}
+        {/* ===== PROFIL TAB ===== */}
         {activeTab === "profile" && (
           <div className="space-y-4">
-            {/* Profil bosh kartasi */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-center space-y-2">
               <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-amber-500 to-amber-300 mx-auto flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg shadow-amber-500/20">
                 {brandName ? brandName[0] : "U"}
               </div>
-              <h2 className="font-bold text-base text-white">
-                {brandName}
-              </h2>
-              <p className="text-xs text-slate-400">
-                📞 {masterPhone} • {tgUser?.username ? `@${tgUser.username}` : "@Smeta24Bot"}
-              </p>
+              <h2 className="font-bold text-base text-white">{brandName}</h2>
+              <p className="text-xs text-slate-400">📞 {masterPhone} • {tgUser?.username ? `@${tgUser.username}` : "@Smeta24Bot"}</p>
               <div className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-400 text-xs px-3 py-1 rounded-full font-bold border border-amber-500/30">
-                ⭐ Professional Usta & Narxlar Paneli
+                ⭐ Professional Usta &amp; Narxlar Paneli
               </div>
             </div>
 
-            {/* Balans Kartasi */}
             <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-3.5 flex justify-between items-center">
               <div>
                 <span className="text-[11px] text-slate-400 block font-medium">Hamyon balansi:</span>
-                <span className="text-base font-black text-emerald-400">
-                  {userBalance.toLocaleString("ru-RU")} so&apos;m
-                </span>
+                <span className="text-base font-black text-emerald-400">{userBalance.toLocaleString("ru-RU")} so&apos;m</span>
               </div>
               <button
-                onClick={() => {
-                  triggerHaptic("medium");
-                  setShowTopupModal(true);
-                }}
+                onClick={() => { triggerHaptic("medium"); setShowTopupModal(true); }}
                 className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-3 py-2 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5 text-slate-950" />
@@ -1468,33 +1693,21 @@ export default function Smeta24MiniApp() {
               </button>
             </div>
 
-            {/* NARXLARNI SOZLASH BO'LIMI: IKKI TOIFA */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3">
-              {/* Ichki Tab Tugmalari */}
               <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
-                  onClick={() => {
-                    triggerHaptic("light");
-                    setProfileSubTab("rates");
-                  }}
+                  onClick={() => { triggerHaptic("light"); setProfileSubTab("rates"); }}
                   className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    profileSubTab === "rates"
-                      ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20"
-                      : "text-slate-400 hover:text-white"
+                    profileSubTab === "rates" ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <Wrench className="w-3.5 h-3.5" />
                   <span>Usta xizmat haqi</span>
                 </button>
                 <button
-                  onClick={() => {
-                    triggerHaptic("light");
-                    setProfileSubTab("materials");
-                  }}
+                  onClick={() => { triggerHaptic("light"); setProfileSubTab("materials"); }}
                   className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    profileSubTab === "materials"
-                      ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20"
-                      : "text-slate-400 hover:text-white"
+                    profileSubTab === "materials" ? "bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/20" : "text-slate-400 hover:text-white"
                   }`}
                 >
                   <Store className="w-3.5 h-3.5" />
@@ -1502,7 +1715,6 @@ export default function Smeta24MiniApp() {
                 </button>
               </div>
 
-              {/* Kategoriya filterlari */}
               <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
                 {["Barchasi", "Shift", "Devor", "Pol"].map((cat) => (
                   <button
@@ -1519,37 +1731,20 @@ export default function Smeta24MiniApp() {
                 ))}
               </div>
 
-              {/* 1. USTA XIZMAT HAQI NARXLARI RO'YXATI */}
               {profileSubTab === "rates" && (
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-[11px] text-slate-400 pb-1 border-b border-slate-800">
                     <span>1 m² uchun usta mehnat haqi:</span>
-                    <button
-                      onClick={resetRatesToDefault}
-                      className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Standartga qaytarish</span>
+                    <button onClick={resetRatesToDefault} className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold">
+                      <RotateCcw className="w-3 h-3" /><span>Standartga qaytarish</span>
                     </button>
                   </div>
-
                   <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-0.5">
-                    {CONFIGURABLE_LABOR_RATES.filter(
-                      (r) =>
-                        profileCategoryFilter === "Barchasi" ||
-                        r.category === profileCategoryFilter
-                    ).map((rateItem) => (
-                      <div
-                        key={rateItem.id}
-                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2"
-                      >
+                    {CONFIGURABLE_LABOR_RATES.filter((r) => profileCategoryFilter === "Barchasi" || r.category === profileCategoryFilter).map((rateItem) => (
+                      <div key={rateItem.id} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
                         <div className="min-w-0 pr-1">
-                          <p className="text-xs font-semibold text-slate-200 truncate">
-                            {rateItem.name}
-                          </p>
-                          <span className="text-[9px] text-amber-400/80 font-medium">
-                            {rateItem.category} • {rateItem.unit}
-                          </span>
+                          <p className="text-xs font-semibold text-slate-200 truncate">{rateItem.name}</p>
+                          <span className="text-[9px] text-amber-400/80 font-medium">{rateItem.category} • {rateItem.unit}</span>
                         </div>
                         <div className="w-28 shrink-0 relative">
                           <input
@@ -1557,10 +1752,7 @@ export default function Smeta24MiniApp() {
                             inputMode="numeric"
                             value={masterRates[rateItem.id] ?? rateItem.defaultRate}
                             onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value.replace(/\D/g, "")) || 0;
-                              updateMasterRate(rateItem.id, val);
-                            }}
+                            onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, "")) || 0; updateMasterRate(rateItem.id, val); }}
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-right font-black text-amber-300 focus:border-amber-400 outline-none"
                           />
                         </div>
@@ -1570,41 +1762,23 @@ export default function Smeta24MiniApp() {
                 </div>
               )}
 
-              {/* 2. TUMAN MATERIAL NARXLARI RO'YXATI */}
               {profileSubTab === "materials" && (
                 <div className="space-y-2">
                   <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-[10.5px] text-slate-300 leading-snug">
                     💡 <strong>Eslatma:</strong> Har bir tuman va viloyat bozorida materiallar narxi har xil. Bu yerga o&apos;zingiz xarid qiladigan narxlarni kiritsangiz, kalkulyator aynan shu narxlar bilan hisoblab beradi.
                   </div>
-
                   <div className="flex justify-between items-center text-[11px] text-slate-400 pb-1 border-b border-slate-800">
                     <span>Do&apos;kon / Bozor narxlari:</span>
-                    <button
-                      onClick={resetMaterialsToDefault}
-                      className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Standartga qaytarish</span>
+                    <button onClick={resetMaterialsToDefault} className="text-amber-400 hover:text-amber-300 text-[10px] flex items-center gap-1 font-semibold">
+                      <RotateCcw className="w-3 h-3" /><span>Standartga qaytarish</span>
                     </button>
                   </div>
-
                   <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-0.5">
-                    {CONFIGURABLE_MATERIALS.filter(
-                      (m) =>
-                        profileCategoryFilter === "Barchasi" ||
-                        m.category === profileCategoryFilter
-                    ).map((matItem) => (
-                      <div
-                        key={matItem.code}
-                        className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2"
-                      >
+                    {CONFIGURABLE_MATERIALS.filter((m) => profileCategoryFilter === "Barchasi" || m.category === profileCategoryFilter).map((matItem) => (
+                      <div key={matItem.code} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
                         <div className="min-w-0 pr-1">
-                          <p className="text-xs font-semibold text-slate-200 truncate">
-                            {matItem.name}
-                          </p>
-                          <span className="text-[9px] text-sky-400/80 font-medium">
-                            {matItem.category} • 1 {matItem.unit} narxi
-                          </span>
+                          <p className="text-xs font-semibold text-slate-200 truncate">{matItem.name}</p>
+                          <span className="text-[9px] text-sky-400/80 font-medium">{matItem.category} • 1 {matItem.unit} narxi</span>
                         </div>
                         <div className="w-28 shrink-0 relative">
                           <input
@@ -1612,10 +1786,7 @@ export default function Smeta24MiniApp() {
                             inputMode="numeric"
                             value={materialPrices[matItem.code] ?? matItem.defaultPrice}
                             onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value.replace(/\D/g, "")) || 0;
-                              updateMaterialPrice(matItem.code, val);
-                            }}
+                            onChange={(e) => { const val = parseInt(e.target.value.replace(/\D/g, "")) || 0; updateMaterialPrice(matItem.code, val); }}
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-right font-black text-emerald-300 focus:border-amber-400 outline-none"
                           />
                         </div>
@@ -1626,7 +1797,6 @@ export default function Smeta24MiniApp() {
               )}
             </div>
 
-            {/* Mualliflik ma'lumotnomasi */}
             <div className="bg-slate-900/80 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 space-y-1.5">
               <p className="font-bold text-slate-200">Smeta24 Tizimi Haqida:</p>
               <p>O&apos;zbekiston bo&apos;ylab qurilish va ta&apos;mir smetalarini avtomatlashtirilgan hisoblash platformasi.</p>
@@ -1637,7 +1807,7 @@ export default function Smeta24MiniApp() {
           </div>
         )}
 
-        {/* LEADS TAB */}
+        {/* ===== LEADS TAB ===== */}
         {activeTab === "leads" && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
@@ -1649,92 +1819,35 @@ export default function Smeta24MiniApp() {
                     {filteredLeads.length} ta faol
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={fetchLeads}
-                  disabled={isLoadingLeads}
-                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95 border border-slate-700/60"
-                  title="Yangilash"
-                >
+                <button type="button" onClick={fetchLeads} disabled={isLoadingLeads} className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95 border border-slate-700/60" title="Yangilash">
                   <RefreshCw className={`w-4 h-4 ${isLoadingLeads ? "animate-spin text-amber-400" : ""}`} />
                 </button>
               </div>
-
               <p className="text-xs text-slate-400 leading-relaxed">
                 Mijozlar tomonidan qoldirilgan tekshirilgan ta&apos;mir va material buyurtmalari.
               </p>
-
-              {/* Viloyat Filtrlari */}
               <div className="pt-2 border-t border-slate-800/80 space-y-2">
                 <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
                   {["Barchasi", "Toshkent shahri", "Samarqand", "Farg'ona"].map((reg) => (
-                    <button
-                      key={reg}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("light");
-                        setSelectedLeadRegion(reg);
-                      }}
-                      className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg transition whitespace-nowrap ${
-                        selectedLeadRegion === reg
-                          ? "bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/30"
-                          : "bg-slate-800/80 text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      {reg}
-                    </button>
+                    <button key={reg} type="button" onClick={() => { triggerHaptic("light"); setSelectedLeadRegion(reg); }}
+                      className={`text-[10px] font-semibold px-2.5 py-1 rounded-lg transition whitespace-nowrap ${selectedLeadRegion === reg ? "bg-amber-500 text-slate-950 font-bold shadow-sm shadow-amber-500/30" : "bg-slate-800/80 text-slate-400 hover:text-white"}`}
+                    >{reg}</button>
                   ))}
                 </div>
-
-                {/* Turi Filtrlari */}
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("light");
-                      setSelectedLeadType("Barchasi");
-                    }}
-                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
-                      selectedLeadType === "Barchasi"
-                        ? "bg-slate-700 text-white border border-slate-600"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Barcha turlar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("light");
-                      setSelectedLeadType("materials_order");
-                    }}
-                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
-                      selectedLeadType === "materials_order"
-                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/40"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    📦 Materiallar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("light");
-                      setSelectedLeadType("need_master");
-                    }}
-                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${
-                      selectedLeadType === "need_master"
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    🔨 Usta kerak
-                  </button>
+                  <button type="button" onClick={() => { triggerHaptic("light"); setSelectedLeadType("Barchasi"); }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${selectedLeadType === "Barchasi" ? "bg-slate-700 text-white border border-slate-600" : "text-slate-400 hover:text-slate-200"}`}
+                  >Barcha turlar</button>
+                  <button type="button" onClick={() => { triggerHaptic("light"); setSelectedLeadType("materials_order"); }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${selectedLeadType === "materials_order" ? "bg-blue-500/20 text-blue-300 border border-blue-500/40" : "text-slate-400 hover:text-slate-200"}`}
+                  >📦 Materiallar</button>
+                  <button type="button" onClick={() => { triggerHaptic("light"); setSelectedLeadType("need_master"); }}
+                    className={`text-[9.5px] font-semibold px-2 py-0.5 rounded transition ${selectedLeadType === "need_master" ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40" : "text-slate-400 hover:text-slate-200"}`}
+                  >🔨 Usta kerak</button>
                 </div>
               </div>
             </div>
 
-            {/* Leads list */}
             {isLoadingLeads && leadsList.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
                 <Loader2 className="w-6 h-6 animate-spin text-amber-400 mx-auto" />
@@ -1749,28 +1862,17 @@ export default function Smeta24MiniApp() {
             ) : (
               <div className="space-y-3">
                 {filteredLeads.map((lead) => (
-                  <div
-                    key={lead.id}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-md"
-                  >
+                  <div key={lead.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-md">
                     <div className="flex justify-between items-start gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          {lead.region}
-                        </span>
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${
-                          lead.lead_type === "materials_order"
-                            ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        }`}>
+                        <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">{lead.region}</span>
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${lead.lead_type === "materials_order" ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"}`}>
                           {lead.lead_type === "materials_order" ? "📦 Ulgurji material" : "🔨 Usta kerak"}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 whitespace-nowrap">{lead.date}</span>
                     </div>
-
                     <h3 className="font-bold text-xs text-white leading-snug">{lead.title}</h3>
-
                     <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950 p-2 rounded-xl border border-slate-800/60">
                       <div>
                         <span className="text-slate-400 block text-[9.5px]">Maydon:</span>
@@ -1781,7 +1883,6 @@ export default function Smeta24MiniApp() {
                         <span className="font-bold text-emerald-400">{lead.budget}</span>
                       </div>
                     </div>
-
                     {lead.isPurchased ? (
                       <div className="space-y-2">
                         <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-2.5 text-xs text-emerald-400 font-bold flex items-center justify-between">
@@ -1789,35 +1890,22 @@ export default function Smeta24MiniApp() {
                             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                             <span>{lead.contact}</span>
                           </div>
-                          <span className="text-[9.5px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-semibold">
-                            Ochilgan
-                          </span>
+                          <span className="text-[9.5px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-semibold">Ochilgan</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                          <a
-                            href={`tel:${lead.phone_raw || lead.contact.replace(/[^\d+]/g, "")}`}
-                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 text-center"
-                          >
-                            <Phone className="w-3.5 h-3.5 text-slate-950" />
-                            <span>Qo&apos;ng&apos;iroq qilish</span>
+                          <a href={`tel:${lead.phone_raw || lead.contact.replace(/[^\d+]/g, "")}`}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 text-center">
+                            <Phone className="w-3.5 h-3.5 text-slate-950" /><span>Qo&apos;ng&apos;iroq qilish</span>
                           </a>
-                          <a
-                            href={`https://t.me/${lead.phone_raw ? lead.phone_raw.replace(/[^\d]/g, "") : ""}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-95 text-center"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Telegram</span>
+                          <a href={`https://t.me/${lead.phone_raw ? lead.phone_raw.replace(/[^\d]/g, "") : ""}`} target="_blank" rel="noreferrer"
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-95 text-center">
+                            <ExternalLink className="w-3.5 h-3.5 text-amber-400" /><span>Telegram</span>
                           </a>
                         </div>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleBuyLead(lead.id, lead.price)}
-                        className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs py-2.5 rounded-xl border border-amber-500/30 flex items-center justify-center gap-1.5 transition active:scale-95"
-                      >
+                      <button type="button" onClick={() => handleBuyLead(lead.id, lead.price)}
+                        className="w-full bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs py-2.5 rounded-xl border border-amber-500/30 flex items-center justify-center gap-1.5 transition active:scale-95">
                         <Unlock className="w-3.5 h-3.5" />
                         <span>🔓 Kontaktni ochish ({lead.price.toLocaleString("ru-RU")} so&apos;m)</span>
                       </button>
@@ -1829,7 +1917,7 @@ export default function Smeta24MiniApp() {
           </div>
         )}
 
-        {/* GUIDE TAB */}
+        {/* ===== GUIDE TAB ===== */}
         {activeTab === "guide" && (
           <div className="space-y-3">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
@@ -1841,7 +1929,6 @@ export default function Smeta24MiniApp() {
                 Ushbu me&apos;yorlar O&apos;zbekiston qurilish standartlari hamda Knauf, Betek, Ceresit tavsiyalari bo&apos;yicha kiritilgan:
               </p>
             </div>
-
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 text-xs">
               {[
                 { name: "Gipskarton Knauf 9.5mm (1.2x2.5m)", norm: "1 list = 3.0 m²", pack: "Dona (52 000 so'm)" },
@@ -1868,7 +1955,7 @@ export default function Smeta24MiniApp() {
         )}
       </main>
 
-      {/* 3. MODAL: RASMIY PDF-SMETA PREVIEW & DOWNLOAD */}
+      {/* ===== MODAL: PDF ===== */}
       {showPdfModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md max-h-[90vh] overflow-y-auto p-4 space-y-4 shadow-2xl">
@@ -1877,15 +1964,11 @@ export default function Smeta24MiniApp() {
                 <FileText className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-sm text-white">Rasmiy A4 PDF-Smeta</h3>
               </div>
-              <button
-                onClick={() => setShowPdfModal(false)}
-                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
-              >
+              <button onClick={() => setShowPdfModal(false)} className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* A4 Formatdagi hujjat namunasi */}
             <div className="bg-white text-slate-950 p-4 rounded-xl shadow-inner font-sans text-[11px] space-y-3 border border-slate-300">
               <div className="border-b-2 border-amber-500 pb-2 flex justify-between items-start">
                 <div>
@@ -1894,66 +1977,30 @@ export default function Smeta24MiniApp() {
                 </div>
                 <div className="text-right text-[10px]">
                   <span className="bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded text-[9px]">
-                    RASMIY SMETA #2026-901
+                    RASMIY SMETA #{rooms.length} XONA
                   </span>
-                  <p className="text-slate-500 mt-1">Obyekt: {roomName}</p>
+                  <p className="text-slate-500 mt-1">
+                    {rooms.map(r => r.input.roomName).join(', ')}
+                  </p>
                 </div>
               </div>
 
-              {/* Geometriya */}
-              <div className="bg-slate-100 p-2 rounded flex justify-between font-semibold text-[10px]">
-                <span>Uzunlik: {numLength}m</span>
-                <span>Eni: {numWidth}m</span>
-                <span>Balandlik: {numHeight}m</span>
-                <span className="text-amber-600 font-bold">JAMI: {estimate.geometry.totalWorkArea} m²</span>
-              </div>
-
-              {/* Materiallar jadvali */}
-              <div>
-                <p className="font-bold text-[10px] uppercase text-slate-800 mb-1">Talab etiladigan materiallar:</p>
-                <table className="w-full border-collapse text-[9.5px]">
-                  <thead>
-                    <tr className="bg-slate-900 text-white">
-                      <th className="p-1 text-left">Nomi</th>
-                      <th className="p-1 text-right">Qadoq</th>
-                      <th className="p-1 text-right">Summa</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {estimate.materials.map((m, idx) => (
-                      <tr key={idx} className="border-b border-slate-200">
-                        <td className="p-1 font-medium">{m.name}</td>
-                        <td className="p-1 text-right font-bold text-amber-700">
-                          {m.packagesCount} {m.unit}
-                        </td>
-                        <td className="p-1 text-right">{formatUZS(m.totalPrice)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Usta xizmati */}
-              {isMasterMode && estimate.laborItems.length > 0 && (
-                <div className="border-t border-slate-200 pt-1 space-y-0.5">
-                  <p className="font-bold text-[10px] uppercase text-slate-800">Usta ish haqi:</p>
-                  {estimate.laborItems.map((lab) => (
-                    <div key={lab.id} className="flex justify-between text-[9px] text-slate-700">
-                      <span>{lab.name}:</span>
-                      <span className="font-bold">{formatUZS(lab.totalPrice)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between font-bold text-[10px] pt-1 border-t border-slate-200">
-                    <span>Usta xizmat haqi jami:</span>
-                    <span className="text-emerald-700">{formatUZS(estimate.laborTotal)}</span>
+              {/* Xonalar bo'yicha */}
+              {projectSummary.roomBreakdown.map((rb, idx) => (
+                <div key={rb.roomId} className="bg-slate-50 p-2 rounded border border-slate-200">
+                  <p className="font-bold text-[10px] text-slate-800">{rb.roomName} — {rb.floorArea} m²</p>
+                  <div className="flex justify-between text-[9px] text-slate-600 mt-0.5">
+                    <span>Materiallar: {formatUZS(rb.materialsTotal)}</span>
+                    <span>Ish haqi: {formatUZS(rb.laborTotal)}</span>
+                    <span className="font-bold text-amber-700">Jami: {formatUZS(rb.grandTotal)}</span>
                   </div>
                 </div>
-              )}
+              ))}
 
               {/* Jami */}
               <div className="bg-amber-50 p-2 rounded border border-amber-300 flex justify-between items-center font-black text-xs text-slate-900">
                 <span>UMUMIY LOYIHA BUDJETI:</span>
-                <span>{formatUZS(estimate.grandTotal)}</span>
+                <span>{formatUZS(projectSummary.projectGrandTotal)}</span>
               </div>
 
               <div className="text-center text-[8.5px] text-slate-500 pt-1">
@@ -1961,54 +2008,31 @@ export default function Smeta24MiniApp() {
               </div>
             </div>
 
-            {/* Status Xabari */}
             {pdfStatusMsg && (
-              <div
-                className={`p-3 rounded-xl text-xs font-bold text-center leading-snug animate-in fade-in ${
-                  pdfStatusMsg.startsWith("✅")
-                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/40"
-                    : "bg-rose-500/15 text-rose-400 border border-rose-500/40"
-                }`}
-              >
+              <div className={`p-3 rounded-xl text-xs font-bold text-center leading-snug animate-in fade-in ${pdfStatusMsg.startsWith("✅") ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/40" : "bg-rose-500/15 text-rose-400 border border-rose-500/40"}`}>
                 {pdfStatusMsg}
               </div>
             )}
 
-            {/* Tugmalar */}
             <div className="space-y-2">
-              <button
-                type="button"
-                disabled={isSendingPdf}
-                onClick={handleSendPdfToTelegram}
-                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-[0.98]"
-              >
+              <button type="button" disabled={isSendingPdf} onClick={handleSendPdfToTelegram}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition active:scale-[0.98]">
                 {isSendingPdf ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                    <span>PDF tayyorlanib, chatga yuborilmoqda...</span>
-                  </>
+                  <><Loader2 className="w-4 h-4 animate-spin text-slate-950" /><span>PDF tayyorlanib, chatga yuborilmoqda...</span></>
                 ) : (
-                  <>
-                    <Send className="w-4 h-4 text-slate-950" />
-                    <span>📨 PDF-ni Telegram Chatga yuborish</span>
-                  </>
+                  <><Send className="w-4 h-4 text-slate-950" /><span>📨 PDF-ni Telegram Chatga yuborish</span></>
                 )}
               </button>
-
-              <button
-                type="button"
-                onClick={handlePrintPdf}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition active:scale-[0.98]"
-              >
-                <Printer className="w-3.5 h-3.5 text-amber-400" />
-                <span>🖨️ Chop etish / Qurilmaga saqlash</span>
+              <button type="button" onClick={handlePrintPdf}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 border border-slate-700 transition active:scale-[0.98]">
+                <Printer className="w-3.5 h-3.5 text-amber-400" /><span>🖨️ Chop etish / Qurilmaga saqlash</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 4. MODAL: MATERIAL BUYURTMA (LID QOLDIRISH) */}
+      {/* ===== MODAL: LEAD ===== */}
       {showLeadModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
@@ -2017,106 +2041,50 @@ export default function Smeta24MiniApp() {
                 <ShoppingBag className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-sm text-white">Ulgurji Narxda Buyurtma</h3>
               </div>
-              <button
-                onClick={() => {
-                  setShowLeadModal(false);
-                  setLeadSubmitted(false);
-                }}
-                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
-              >
+              <button onClick={() => { setShowLeadModal(false); setLeadSubmitted(false); }} className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                 <X className="w-4 h-4" />
               </button>
             </div>
-
             {leadSubmitted ? (
               <div className="text-center py-6 space-y-3">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
                 <h4 className="font-bold text-sm text-white">Buyurtmangiz qabul qilindi!</h4>
-                <p className="text-xs text-slate-400">
-                  Hamkor qurilish do&apos;konlari tez orada siz bilan bog&apos;lanadi va materiallarni eng arzon ulgurji narxda yetkazib beradi.
-                </p>
-                <button
-                  onClick={() => {
-                    setShowLeadModal(false);
-                    setLeadSubmitted(false);
-                  }}
-                  className="bg-slate-800 text-white text-xs font-bold py-2 px-6 rounded-xl"
-                >
-                  Yopish
-                </button>
+                <p className="text-xs text-slate-400">Hamkor qurilish do&apos;konlari tez orada siz bilan bog&apos;lanadi.</p>
+                <button onClick={() => { setShowLeadModal(false); setLeadSubmitted(false); }} className="bg-slate-800 text-white text-xs font-bold py-2 px-6 rounded-xl">Yopish</button>
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-slate-400">
-                  Ushbu buyurtmani birjaga e&apos;lon qiling. Hamkor do&apos;konlar va tasdiqlangan ustalar to&apos;g&apos;ridan-to&apos;g&apos;ri siz bilan bog&apos;lanadi:
-                </p>
-
-                {/* Buyurtma turi */}
+                <p className="text-xs text-slate-400">Ushbu buyurtmani birjaga e&apos;lon qiling:</p>
                 <div>
                   <label className="text-[10px] text-slate-400 block mb-1">Buyurtma turi</label>
                   <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("light");
-                        setLeadOrderType("materials_order");
-                      }}
-                      className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${
-                        leadOrderType === "materials_order"
-                          ? "bg-amber-500 text-slate-950 border-amber-400"
-                          : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
-                      }`}
-                    >
-                      📦 Materiallar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("light");
-                        setLeadOrderType("need_master");
-                      }}
-                      className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${
-                        leadOrderType === "need_master"
-                          ? "bg-amber-500 text-slate-950 border-amber-400"
-                          : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"
-                      }`}
-                    >
-                      🔨 Usta chaqirish
-                    </button>
+                    {[
+                      { val: "materials_order", label: "📦 Materiallar" },
+                      { val: "need_master", label: "🔨 Usta chaqirish" },
+                    ].map((opt) => (
+                      <button key={opt.val} type="button" onClick={() => { triggerHaptic("light"); setLeadOrderType(opt.val); }}
+                        className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${leadOrderType === opt.val ? "bg-amber-500 text-slate-950 border-amber-400" : "bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700"}`}>
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-
                 <div>
                   <label className="text-[10px] text-slate-400 block mb-1">Ismingiz (ixtiyoriy)</label>
-                  <input
-                    type="text"
-                    placeholder="Masalan: Sardor"
-                    value={leadClientName}
-                    onChange={(e) => setLeadClientName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
-                  />
+                  <input type="text" placeholder="Masalan: Sardor" value={leadClientName} onChange={(e) => setLeadClientName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none" />
                 </div>
-
                 <div>
                   <label className="text-[10px] text-slate-400 block mb-1">Telefon raqamingiz *</label>
-                  <input
-                    type="text"
-                    value={clientPhone}
-                    onChange={(e) => setClientPhone(e.target.value)}
-                    placeholder="+998 90 123 45 67"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none font-bold"
-                  />
+                  <input type="text" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} placeholder="+998 90 123 45 67"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none font-bold" />
                 </div>
-
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Yetkazib berish manzili / Viloyat</label>
-                  <select
-                    value={clientRegion}
-                    onChange={(e) => setClientRegion(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
-                  >
+                  <label className="text-[10px] text-slate-400 block mb-1">Viloyat</label>
+                  <select value={clientRegion} onChange={(e) => setClientRegion(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none">
                     <option value="Toshkent shahri">Toshkent shahri</option>
                     <option value="Toshkent viloyati">Toshkent viloyati</option>
                     <option value="Samarqand">Samarqand viloyati</option>
@@ -2126,27 +2094,16 @@ export default function Smeta24MiniApp() {
                     <option value="Buxoro">Buxoro viloyati</option>
                   </select>
                 </div>
-
                 <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs flex justify-between items-center">
                   <span className="text-slate-400 text-[10px]">Mo&apos;ljal smeta budjeti:</span>
-                  <span className="font-bold text-amber-400">{formatUZS(estimate.grandTotal || estimate.materialsTotal)}</span>
+                  <span className="font-bold text-amber-400">{formatUZS(projectSummary.projectGrandTotal)}</span>
                 </div>
-
-                <button
-                  type="button"
-                  disabled={isSubmittingLead}
-                  onClick={handleCreateLead}
-                  className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95 flex items-center justify-center gap-2"
-                >
+                <button type="button" disabled={isSubmittingLead} onClick={handleCreateLead}
+                  className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/20 transition active:scale-95 flex items-center justify-center gap-2">
                   {isSubmittingLead ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
-                      <span>Birjaga e&apos;lon qilinmoqda...</span>
-                    </>
+                    <><Loader2 className="w-4 h-4 animate-spin text-slate-950" /><span>Birjaga e&apos;lon qilinmoqda...</span></>
                   ) : (
-                    <>
-                      <span>🚀 Buyurtmani birjaga yuborish</span>
-                    </>
+                    <span>🚀 Buyurtmani birjaga yuborish</span>
                   )}
                 </button>
               </div>
@@ -2155,7 +2112,242 @@ export default function Smeta24MiniApp() {
         </div>
       )}
 
-      {/* 5. MODAL: BALANS TO'LDIRISH */}
+      {/* ===== MODAL: MENING SMETALARIM (LOYIHALAR TARIXI) ===== */}
+      {showProjectsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <FolderArchive className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm text-white">Mening Smetalarim</h3>
+                <span className="bg-amber-500/15 text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                  {savedProjects.length}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowProjectsModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-2 flex-shrink-0">
+              <button
+                onClick={handleNewProject}
+                className="flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold py-2 px-3 rounded-xl transition active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5 text-amber-400" />
+                <span>+ Yangi loyiha</span>
+              </button>
+              <button
+                onClick={() => {
+                  setProjectNameInput(currentProjectName);
+                  setShowProjectsModal(false);
+                  setShowSaveProjectModal(true);
+                }}
+                className="flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold py-2 px-3 rounded-xl shadow-sm shadow-emerald-600/20 transition active:scale-95"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Joriy smetani saqlash</span>
+              </button>
+            </div>
+
+            {/* Projects List */}
+            <div className="overflow-y-auto space-y-2.5 pr-1 flex-1 no-scrollbar">
+              {savedProjects.length === 0 ? (
+                <div className="text-center py-8 px-4 space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/20">
+                    <FolderOpen className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs text-white">Hozircha saqlangan smetalar yo&apos;q</h4>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Kalkulyatorda hisoblagan loyihangizni saqlang va keyinchalik istalgan vaqtda qayta oching.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setProjectNameInput(currentProjectName);
+                      setShowProjectsModal(false);
+                      setShowSaveProjectModal(true);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black py-2 px-4 rounded-xl transition active:scale-95 inline-flex items-center gap-1.5"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Joriy hisobni saqlash</span>
+                  </button>
+                </div>
+              ) : (
+                savedProjects.map((proj) => {
+                  const isCurrent = proj.name === currentProjectName;
+                  return (
+                    <div
+                      key={proj.id}
+                      className={`p-3 rounded-2xl border transition-all duration-200 ${
+                        isCurrent
+                          ? "bg-slate-900 border-amber-500/50 shadow-md ring-1 ring-amber-500/20"
+                          : "bg-slate-950 border-slate-800 hover:border-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-bold text-xs text-white truncate max-w-[180px]">
+                              {proj.name}
+                            </h4>
+                            {isCurrent && (
+                              <span className="bg-amber-500/20 text-amber-400 text-[8.5px] font-bold px-1.5 py-0.2 rounded border border-amber-500/30 whitespace-nowrap">
+                                Faol
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-2.5 h-2.5" />
+                              {proj.createdAt}
+                            </span>
+                            <span>•</span>
+                            <span className="text-amber-400/80 font-semibold">{proj.totalRooms || proj.rooms.length} xona</span>
+                            {proj.totalWorkArea > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>{proj.totalWorkArea.toFixed(1)} m²</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <span className="font-bold text-xs text-amber-400 block">
+                            {formatUZS(proj.grandTotal)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-800/80">
+                        <button
+                          onClick={() => handleLoadProject(proj)}
+                          className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10.5px] py-1.5 px-3 rounded-xl transition active:scale-95 flex items-center justify-center gap-1 shadow-sm"
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          <span>Ochish</span>
+                        </button>
+                        <button
+                          onClick={() => handleDuplicateProject(proj)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-1.5 rounded-xl border border-slate-700 transition active:scale-95"
+                          title="Nusxasini yaratish"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteProject(proj.id, proj.name)}
+                          className="bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 p-1.5 rounded-xl border border-slate-700 hover:border-rose-500/30 transition active:scale-95"
+                          title="O'chirish"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: SMETANI SAQLASH ===== */}
+      {showSaveProjectModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Save className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm text-white">Loyihani Saqlash</h3>
+              </div>
+              <button
+                onClick={() => setShowSaveProjectModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1">
+                  Loyiha / Obyekt nomi *
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={projectNameInput}
+                  onChange={(e) => setProjectNameInput(e.target.value)}
+                  placeholder="Masalan: Yunusobod 3-xonali kvartira"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 outline-none font-semibold"
+                />
+              </div>
+
+              {/* Tezkor takliflar */}
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1">Tezkor nomlar:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    "Yunusobod kvartira",
+                    "Chilonzor dom",
+                    "Kottej 1-qavat",
+                    "Sanuzel + Oshxona",
+                    "Toshkent City",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setProjectNameInput(preset);
+                      }}
+                      className="text-[10px] font-medium bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-lg px-2 py-1 transition"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Summary box */}
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-1.5 text-xs">
+                <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                  <span>Xonalar soni:</span>
+                  <span className="font-bold text-white">{rooms.length} ta xona</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                  <span>Jami maydon:</span>
+                  <span className="font-bold text-white">{projectSummary.totalWorkArea.toFixed(1)} m²</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-slate-800/80 pt-1.5">
+                  <span className="text-slate-300 font-semibold text-[11px]">Jami smeta:</span>
+                  <span className="font-black text-amber-400">{formatUZS(projectSummary.projectGrandTotal)}</span>
+                </div>
+              </div>
+
+              {/* Save button */}
+              <button
+                type="button"
+                onClick={() => handleSaveCurrentProject()}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-xl shadow-lg shadow-emerald-600/25 transition active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                <span>Loyihani Xotiraga Saqlash</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: TOPUP ===== */}
       {showTopupModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
@@ -2164,35 +2356,24 @@ export default function Smeta24MiniApp() {
                 <CreditCard className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-sm text-white">Hisobni To&apos;ldirish</h3>
               </div>
-              <button
-                onClick={() => setShowTopupModal(false)}
-                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
-              >
+              <button onClick={() => setShowTopupModal(false)} className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            <p className="text-xs text-slate-400">
-              PDF-smetalar yuklab olish yoki buyurtmalar birjasidan mijoz kontaktlarini sotib olish uchun balansingizni to&apos;ldiring:
-            </p>
-
+            <p className="text-xs text-slate-400">PDF-smetalar yuklab olish yoki buyurtmalar birjasidan mijoz kontaktlarini sotib olish uchun balansingizni to&apos;ldiring:</p>
             <div className="grid grid-cols-3 gap-2">
               {[
                 { amount: 10000, label: "10 000 so'm" },
                 { amount: 25000, label: "25 000 so'm" },
                 { amount: 50000, label: "50 000 so'm" },
               ].map((item) => (
-                <button
-                  key={item.amount}
-                  onClick={() => handleTopup(item.amount)}
-                  className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center transition active:scale-95"
-                >
+                <button key={item.amount} onClick={() => handleTopup(item.amount)}
+                  className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center transition active:scale-95">
                   <span className="font-bold text-xs text-amber-400 block">{item.label}</span>
                   <span className="text-[9px] text-slate-500">Payme / Click</span>
                 </button>
               ))}
             </div>
-
             <div className="text-[10px] text-center text-slate-500">
               * Sinov rejimida summa bir zumda hamyoningizga qo&apos;shiladi.
             </div>
@@ -2200,7 +2381,7 @@ export default function Smeta24MiniApp() {
         </div>
       )}
 
-      {/* 6. BOTTOM NAVIGATION BAR */}
+      {/* ===== BOTTOM NAVIGATION ===== */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80 px-6 py-2.5 max-w-md mx-auto">
         <div className="flex justify-between items-center">
           {[
@@ -2214,24 +2395,13 @@ export default function Smeta24MiniApp() {
             return (
               <button
                 key={tab.id}
-                onClick={() => {
-                  triggerHaptic("light");
-                  setActiveTab(tab.id);
-                }}
-                className={`flex flex-col items-center gap-1 transition-all duration-200 active:scale-95 ${
-                  isActive ? "text-amber-400" : "text-slate-500 hover:text-slate-400"
-                }`}
+                onClick={() => { triggerHaptic("light"); setActiveTab(tab.id); }}
+                className={`flex flex-col items-center gap-1 transition-all duration-200 active:scale-95 ${isActive ? "text-amber-400" : "text-slate-500 hover:text-slate-400"}`}
               >
-                <div
-                  className={`p-1 rounded-xl transition ${
-                    isActive ? "bg-amber-500/15" : "bg-transparent"
-                  }`}
-                >
+                <div className={`p-1 rounded-xl transition ${isActive ? "bg-amber-500/15" : "bg-transparent"}`}>
                   <Icon className="w-5 h-5" />
                 </div>
-                <span className={`text-[10px] ${isActive ? "font-bold text-amber-400" : "font-medium"}`}>
-                  {tab.label}
-                </span>
+                <span className={`text-[10px] ${isActive ? "font-bold text-amber-400" : "font-medium"}`}>{tab.label}</span>
               </button>
             );
           })}
