@@ -61,6 +61,7 @@ import {
   Calendar,
   Bookmark,
   Pencil,
+  Minus,
 } from "lucide-react";
 
 // =======================================
@@ -658,6 +659,20 @@ export default function Smeta24MiniApp() {
   } | null>(null);
   const [editPriceInput, setEditPriceInput] = useState<number>(0);
 
+  // Qo'lda material miqdorini tahrirlash ([-] 8 [+] stepper yoki bevosita kiritish)
+  const [editingQuantity, setEditingQuantity] = useState<{
+    roomId: string;
+    roomName: string;
+    code: string;
+    name: string;
+    packagesCount: number;
+    autoPackagesCount: number;
+    unit: string;
+    unitPrice: number;
+    isCustomQuantity: boolean;
+  } | null>(null);
+  const [editQtyInput, setEditQtyInput] = useState<number>(1);
+
   // Lid-birja
   const [leadsList, setLeadsList] = useState<any[]>([
     { id: "LD-9821", title: "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq", area: "78.4 m²", budget: "16 400 000 so'm", date: "10 daqiqa oldin", region: "Toshkent shahri", price: 10000, lead_type: "materials_order", isPurchased: false, contact: "+998 90 ••• •• 11 (Farrux)" },
@@ -1029,6 +1044,30 @@ export default function Smeta24MiniApp() {
           input: {
             ...r.input,
             excludedMaterialCodes: updatedExcluded,
+          },
+        };
+      })
+    );
+  };
+
+  const handleUpdateQuantity = (roomId: string, materialCode: string, newQty: number | null) => {
+    triggerHaptic("medium");
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        const currentCustom = { ...(r.input.customMaterialQuantities || {}) };
+        if (newQty === null || newQty <= 0) {
+          delete currentCustom[materialCode];
+          showQuickToast("Avtomat formulaga qaytarildi 🔄");
+        } else {
+          currentCustom[materialCode] = newQty;
+          showQuickToast(`Miqdor belgilandi: ${newQty} ta ✅`);
+        }
+        return {
+          ...r,
+          input: {
+            ...r.input,
+            customMaterialQuantities: currentCustom,
           },
         };
       })
@@ -1786,14 +1825,38 @@ export default function Smeta24MiniApp() {
 
                             <div className="text-right shrink-0">
                               {isUnlocked ? (
-                                <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-[11px] ${
-                                  isExcluded
-                                    ? "bg-slate-900 text-slate-500 border border-slate-800 line-through"
-                                    : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                                }`}>
-                                  {!isExcluded && <CheckCircle2 className="w-3 h-3" />}
-                                  {item.packagesCount} {item.unit}
-                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isExcluded}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerHaptic("light");
+                                    setEditingQuantity({
+                                      roomId: activeRoomId,
+                                      roomName: activeRoom?.input.roomName || "Xona",
+                                      code: item.code,
+                                      name: item.name,
+                                      packagesCount: item.packagesCount,
+                                      autoPackagesCount: item.autoPackagesCount || item.packagesCount,
+                                      unit: item.unit,
+                                      unitPrice: item.unitPrice,
+                                      isCustomQuantity: !!item.isCustomQuantity,
+                                    });
+                                    setEditQtyInput(item.packagesCount);
+                                  }}
+                                  className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-[11px] transition active:scale-95 ${
+                                    isExcluded
+                                      ? "bg-slate-900 text-slate-500 border border-slate-800 line-through cursor-not-allowed"
+                                      : item.isCustomQuantity
+                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 shadow-sm shadow-amber-500/10"
+                                      : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
+                                  }`}
+                                  title="Miqdorni qo'lda o'zgartirish ([-] / [+])"
+                                >
+                                  {!isExcluded && !item.isCustomQuantity && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                                  {!isExcluded && item.isCustomQuantity && <Pencil className="w-2.5 h-2.5 text-amber-400" />}
+                                  <span>{item.packagesCount} {item.unit}</span>
+                                </button>
                               ) : (
                                 <div onClick={handleUnlockPdf} className="cursor-pointer group relative inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-2 py-0.5 rounded transition">
                                   <Lock className="w-2.5 h-2.5 text-amber-400" />
@@ -2660,6 +2723,179 @@ export default function Smeta24MiniApp() {
                 >
                   Bekor qilish
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: MATERIAL MIQDORINI TAHRIRLASH (STEPPER [-] QTY [+] / DIRECT INPUT) ===== */}
+      {editingQuantity && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs">
+                  #
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Material Miqdorini Tuzatish</h3>
+                  <p className="text-[10px] text-slate-400">{editingQuantity.roomName}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingQuantity(null)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* Material info & auto vs custom info */}
+              <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800/80 space-y-1.5">
+                <span className="text-[10px] text-slate-400 block uppercase tracking-wider font-semibold">Tanlangan material:</span>
+                <p className="font-bold text-xs text-white leading-snug">{editingQuantity.name}</p>
+                
+                <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-[11px]">
+                  <span className="text-slate-400">Avtomat formula hisobi:</span>
+                  <span className="font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-lg">
+                    {editingQuantity.autoPackagesCount} {editingQuantity.unit}
+                  </span>
+                </div>
+              </div>
+
+              {/* Stepper [-] [Input] [+] */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">
+                  Kerakli miqdor ([-] [+] yoki raqam kiritish):
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setEditQtyInput((prev) => Math.max(1, prev - 1));
+                    }}
+                    className="w-12 h-12 rounded-2xl bg-slate-950 hover:bg-slate-800 border border-slate-800 active:border-amber-500/50 flex items-center justify-center text-white text-lg font-bold transition active:scale-95 shadow-md"
+                    title="1 taga kamaytirish"
+                  >
+                    <Minus className="w-5 h-5 text-slate-200" />
+                  </button>
+
+                  <div className="flex-1 relative">
+                    <input
+                      type="number"
+                      min="1"
+                      autoFocus
+                      value={editQtyInput || ""}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setEditQtyInput(isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      className="w-full h-12 bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-2xl px-3 text-center text-xl font-black text-amber-400 outline-none transition"
+                      placeholder="0"
+                    />
+                    <span className="absolute right-3.5 top-3.5 text-xs font-semibold text-slate-500 pointer-events-none">
+                      {editingQuantity.unit}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setEditQtyInput((prev) => prev + 1);
+                    }}
+                    className="w-12 h-12 rounded-2xl bg-slate-950 hover:bg-slate-800 border border-slate-800 active:border-amber-500/50 flex items-center justify-center text-white text-lg font-bold transition active:scale-95 shadow-md"
+                    title="1 taga oshirish"
+                  >
+                    <Plus className="w-5 h-5 text-amber-400" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick adjustment pills */}
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1 font-medium">Tezkor o&apos;zgartirish:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[-5, -1, +1, +2, +5, +10].map((diff) => (
+                    <button
+                      key={diff}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("light");
+                        setEditQtyInput((prev) => Math.max(1, prev + diff));
+                      }}
+                      className="text-[11px] font-bold bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-xl px-2.5 py-1.5 transition active:scale-95"
+                    >
+                      {diff > 0 ? `+${diff}` : diff}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      setEditQtyInput(editingQuantity.autoPackagesCount);
+                    }}
+                    className="text-[11px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl px-2.5 py-1.5 transition active:scale-95"
+                    title="Formuladagi avtomat qiymatga o'rnatish"
+                  >
+                    Avtomat ({editingQuantity.autoPackagesCount})
+                  </button>
+                </div>
+              </div>
+
+              {/* Price Calculation Preview */}
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-medium">Ushbu miqdor uchun summa:</span>
+                <span className="font-black text-white text-sm">
+                  {formatUZS((editQtyInput || 0) * editingQuantity.unitPrice)}
+                </span>
+              </div>
+
+              {/* Action buttons */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editQtyInput > 0) {
+                        handleUpdateQuantity(editingQuantity.roomId, editingQuantity.code, editQtyInput);
+                        setEditingQuantity(null);
+                        triggerNotificationHaptic("success");
+                      }
+                    }}
+                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs py-3 rounded-xl shadow-lg shadow-amber-500/25 transition active:scale-95 flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4 stroke-[2.5]" />
+                    <span>Miqdorni Saqlash ({editQtyInput} {editingQuantity.unit})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingQuantity(null)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs py-3 px-4 rounded-xl transition"
+                  >
+                    Bekor qilish
+                  </button>
+                </div>
+
+                {/* Avtomatga qaytarish tugmasi (agar hozir qo'lda o'zgartirilgan bo'lsa) */}
+                {editingQuantity.isCustomQuantity && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUpdateQuantity(editingQuantity.roomId, editingQuantity.code, null);
+                      setEditingQuantity(null);
+                      triggerNotificationHaptic("success");
+                    }}
+                    className="w-full bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Avtomat hisob-kitobga qaytarish ({editingQuantity.autoPackagesCount} {editingQuantity.unit})</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

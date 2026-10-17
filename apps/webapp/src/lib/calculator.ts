@@ -56,6 +56,9 @@ export interface RoomInput {
 
   // Ro'yxatdan chiqarib tashlangan materiallar kodlari (masalan: usta yoki mijozda allaqachon bor bo'lsa)
   excludedMaterialCodes?: string[];
+
+  // Qo'lda o'zgartirilgan material miqdorlari (masalan: usta 8 dona o'rniga 10 dona qilganda)
+  customMaterialQuantities?: Record<string, number>;
 }
 
 export interface MaterialItem {
@@ -71,6 +74,8 @@ export interface MaterialItem {
   totalPrice: number;
   description?: string;
   isExcluded?: boolean;
+  isCustomQuantity?: boolean;
+  autoPackagesCount?: number;
 }
 
 export interface LaborItem {
@@ -1065,14 +1070,23 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
     }
   }
 
-  // Excluded materiallarni inobatga olgan holda hisoblash
+  // Excluded materiallarni va Qo'lda belgilangan miqdorlarni inobatga olgan holda hisoblash
   const excludedCodes = input.excludedMaterialCodes || [];
+  const customQuantities = input.customMaterialQuantities || {};
+
   const processedMaterials: MaterialItem[] = materials.map((item) => {
     const isExcluded = excludedCodes.includes(item.code);
+    const hasCustomQty = customQuantities[item.code] !== undefined && customQuantities[item.code] > 0;
+    const finalPackagesCount = hasCustomQty ? customQuantities[item.code] : item.packagesCount;
+    const itemTotal = isExcluded ? 0 : finalPackagesCount * item.unitPrice;
+
     return {
       ...item,
       isExcluded,
-      totalPrice: isExcluded ? 0 : item.totalPrice,
+      packagesCount: finalPackagesCount,
+      autoPackagesCount: item.packagesCount,
+      isCustomQuantity: hasCustomQty,
+      totalPrice: itemTotal,
     };
   });
 
