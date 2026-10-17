@@ -922,7 +922,9 @@ export default function Smeta24MiniApp() {
       
       text += `\n🧱 TALAB QILINADIGAN MATERIALLAR:\n`;
       projectSummary.combinedMaterials.forEach((m) => {
-        text += `• ${m.name}: ${m.packagesCount} ${m.unit} — ${formatUZS(m.totalPrice)}\n`;
+        if (!m.isExcluded) {
+          text += `• ${m.name}: ${m.packagesCount} ${m.unit} — ${formatUZS(m.totalPrice)}\n`;
+        }
       });
       
       text += `\n💵 Materiallar jami: ${formatUZS(projectSummary.materialsGrandTotal)}\n`;
@@ -942,7 +944,9 @@ export default function Smeta24MiniApp() {
       
       text += `🧱 MATERIALLAR:\n`;
       est.materials.forEach((m) => {
-        text += `• ${m.name}: ${m.packagesCount} ${m.unit} (${formatUZS(m.totalPrice)})\n`;
+        if (!m.isExcluded) {
+          text += `• ${m.name}: ${m.packagesCount} ${m.unit} (${formatUZS(m.totalPrice)})\n`;
+        }
       });
       
       text += `\n💵 Materiallar: ${formatUZS(est.materialsTotal)}\n`;
@@ -996,6 +1000,29 @@ export default function Smeta24MiniApp() {
       });
       showQuickToast("🧹 Xona o'lchamlari tozalandi");
     }
+  };
+
+  const toggleMaterialExclusion = (roomId: string, materialCode: string) => {
+    triggerHaptic("light");
+    setRooms((prev) =>
+      prev.map((r) => {
+        if (r.id !== roomId) return r;
+        const currentExcluded = r.input.excludedMaterialCodes || [];
+        const isAlreadyExcluded = currentExcluded.includes(materialCode);
+        const updatedExcluded = isAlreadyExcluded
+          ? currentExcluded.filter((c) => c !== materialCode)
+          : [...currentExcluded, materialCode];
+        
+        showQuickToast(isAlreadyExcluded ? "Material qo'shildi ✅" : "Material olib tashlandi ❌");
+        return {
+          ...r,
+          input: {
+            ...r.input,
+            excludedMaterialCodes: updatedExcluded,
+          },
+        };
+      })
+    );
   };
 
   // ===== HELPERS =====
@@ -1172,14 +1199,16 @@ export default function Smeta24MiniApp() {
     }
     try {
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
-      // Barcha xonalar materiallarini birlashtirish
-      const materialsPayload = projectSummary.combinedMaterials.map((m) => ({
-        name: m.name,
-        exact: m.exactUnitStr,
-        packages: `${m.packagesCount} ${m.unit}`,
-        price_formatted: formatUZS(m.unitPrice),
-        total_formatted: formatUZS(m.totalPrice),
-      }));
+      // Barcha xonalar materiallarini birlashtirish (olib tashlangan materiallarsiz)
+      const materialsPayload = projectSummary.combinedMaterials
+        .filter((m) => !m.isExcluded)
+        .map((m) => ({
+          name: m.name,
+          exact: m.exactUnitStr,
+          packages: `${m.packagesCount} ${m.unit}`,
+          price_formatted: formatUZS(m.unitPrice),
+          total_formatted: formatUZS(m.totalPrice),
+        }));
       const laborPayload = projectSummary.combinedLabor.map((l) => ({
         name: l.name,
         area: `${l.area} ${l.unitStr}`,
@@ -1672,33 +1701,82 @@ export default function Smeta24MiniApp() {
 
                     {/* Materiallar */}
                     <div className="space-y-2">
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
-                        Talab qilinadigan materiallar ({activeRoomEstimate.estimate.materials.length} ta):
-                      </span>
-                      {activeRoomEstimate.estimate.materials.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800/80 text-xs transition hover:border-slate-700">
-                          <div className="pr-2">
-                            <p className="font-semibold text-slate-200 leading-snug">{item.name}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">
-                              Sof sarf: <span className="text-slate-300 font-medium">{item.exactUnitStr}</span>
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            {isUnlocked ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold px-2 py-0.5 rounded text-[11px]">
-                                <CheckCircle2 className="w-3 h-3" />
-                                {item.packagesCount} {item.unit}
-                              </span>
-                            ) : (
-                              <div onClick={handleUnlockPdf} className="cursor-pointer group relative inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-2 py-0.5 rounded transition">
-                                <Lock className="w-2.5 h-2.5 text-amber-400" />
-                                <span className="blur-[3.5px] select-none text-[11px]">{item.packagesCount} {item.unit}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">
+                          Talab qilinadigan materiallar ({activeRoomEstimate.estimate.materials.length} ta):
+                        </span>
+                        <span className="text-[9.5px] text-slate-500 font-medium">
+                          (O&apos;chirish uchun bosing)
+                        </span>
+                      </div>
+                      {activeRoomEstimate.estimate.materials.map((item, idx) => {
+                        const isExcluded = item.isExcluded;
+                        return (
+                          <div
+                            key={idx}
+                            className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition duration-150 ${
+                              isExcluded
+                                ? "bg-slate-950/40 border-slate-800/50 opacity-60"
+                                : "bg-slate-950 border-slate-800/80 hover:border-slate-700"
+                            }`}
+                          >
+                            {/* Toggle tugmasi */}
+                            <button
+                              type="button"
+                              onClick={() => toggleMaterialExclusion(activeRoomId, item.code)}
+                              className="mr-2.5 flex-shrink-0 text-slate-400 hover:text-white transition active:scale-90"
+                              title={isExcluded ? "Smetaga qayta qo'shish" : "Smetadan chiqarib tashlash (Menda bor)"}
+                            >
+                              {isExcluded ? (
+                                <div className="w-5 h-5 rounded-lg border border-slate-700 bg-slate-900 flex items-center justify-center text-slate-600">
+                                  <X className="w-3.5 h-3.5" />
+                                </div>
+                              ) : (
+                                <div className="w-5 h-5 rounded-lg border border-emerald-500/50 bg-emerald-500/15 flex items-center justify-center text-emerald-400">
+                                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                </div>
+                              )}
+                            </button>
+
+                            <div className="pr-2 min-w-0 flex-1">
+                              <p className={`font-semibold leading-snug truncate ${isExcluded ? "line-through text-slate-500" : "text-slate-200"}`}>
+                                {item.name}
+                              </p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  Sof sarf: <span className="text-slate-300 font-medium">{item.exactUnitStr}</span>
+                                </span>
+                                {isExcluded && (
+                                  <span className="text-[9px] bg-rose-500/15 text-rose-400 px-1.5 py-0.2 rounded font-medium border border-rose-500/30">
+                                    Uyda bor / Kerak emas
+                                  </span>
+                                )}
                               </div>
-                            )}
-                            <p className="text-[11px] text-slate-300 font-bold mt-0.5">{formatUZS(item.totalPrice)}</p>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              {isUnlocked ? (
+                                <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-[11px] ${
+                                  isExcluded
+                                    ? "bg-slate-900 text-slate-500 border border-slate-800 line-through"
+                                    : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                                }`}>
+                                  {!isExcluded && <CheckCircle2 className="w-3 h-3" />}
+                                  {item.packagesCount} {item.unit}
+                                </span>
+                              ) : (
+                                <div onClick={handleUnlockPdf} className="cursor-pointer group relative inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-2 py-0.5 rounded transition">
+                                  <Lock className="w-2.5 h-2.5 text-amber-400" />
+                                  <span className="blur-[3.5px] select-none text-[11px]">{item.packagesCount} {item.unit}</span>
+                                </div>
+                              )}
+                              <p className={`text-[11px] font-bold mt-0.5 ${isExcluded ? "text-slate-500 line-through" : "text-slate-300"}`}>
+                                {isExcluded ? "0 so'm" : formatUZS(item.totalPrice)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     {/* Usta xizmati */}

@@ -53,6 +53,9 @@ export interface RoomInput {
 
   // Hudud / Tuman bozor material narxlari
   materialPrices?: Record<string, number>;
+
+  // Ro'yxatdan chiqarib tashlangan materiallar kodlari (masalan: usta yoki mijozda allaqachon bor bo'lsa)
+  excludedMaterialCodes?: string[];
 }
 
 export interface MaterialItem {
@@ -67,6 +70,7 @@ export interface MaterialItem {
   unitPrice: number;
   totalPrice: number;
   description?: string;
+  isExcluded?: boolean;
 }
 
 export interface LaborItem {
@@ -117,25 +121,32 @@ export interface LaborRateConfig {
 // 2026-yil O'zbekiston viloyat va tumanlar bozor narxlari standarti
 export const CONFIGURABLE_MATERIALS: MaterialConfig[] = [
   // Shift
+  // Shift
   { code: 'gips_sheet_9_5', aliases: ['gips_sheet_plain', 'gips_sheet_decor'], name: 'Gipskarton Knauf 9.5 mm (1.2x2.5m)', unit: 'dona', defaultPrice: 52000, category: 'Shift' },
   { code: 'profile_ud_27', aliases: ['profile_decor_set'], name: 'Yo\'naltiruvchi profil UD-27 (3 metr)', unit: 'dona', defaultPrice: 18000, category: 'Shift' },
   { code: 'profile_cd_60', name: 'Shift profili CD-60 (3 metr)', unit: 'dona', defaultPrice: 26000, category: 'Shift' },
   { code: 'podves_tyaga', name: 'Shift ilgichlari (Podves ES)', unit: 'dona', defaultPrice: 2500, category: 'Shift' },
+  { code: 'fasteners_gips_set', name: 'Gipskarton samorez va dyubellar to\'plami', unit: 'quti', defaultPrice: 35000, category: 'Shift' },
+  { code: 'tape_serpyanka_fugen', name: 'Choklar uchun Serpyanka to\'r + Fugen', unit: 'to\'plam', defaultPrice: 65000, category: 'Shift' },
   { code: 'stretch_ceiling_full', aliases: ['natyajnoy_potolok_m2'], name: 'Natyajnoy potolok (plyonka + montaj)', unit: 'm²', defaultPrice: 65000, category: 'Shift' },
   { code: 'ceiling_paint_white_15l', aliases: ['ceiling_paint_white'], name: 'Shift oq bo\'yog\'i (15 L)', unit: 'paqir', defaultPrice: 380000, category: 'Shift' },
 
   // Devor
   { code: 'plaster_rotband_30kg', aliases: ['wall_rotband_plaster_30kg'], name: 'Gipsli suvoq Rotband (30 kg)', unit: 'qop', defaultPrice: 52000, category: 'Devor' },
+  { code: 'mayak_plaster_6mm', name: 'Devor tekislash metall mayoqlari (6 mm)', unit: 'dona', defaultPrice: 8000, category: 'Devor' },
   { code: 'putty_start_25kg', aliases: ['wall_start_putty_25kg'], name: 'Start gipsli shpaklyovka (25 kg)', unit: 'qop', defaultPrice: 48000, category: 'Devor' },
   { code: 'putty_finish_pasta_28kg', aliases: ['wall_finish_pasta_28kg'], name: 'Super Finish tayyor pasta (28 kg)', unit: 'paqir', defaultPrice: 260000, category: 'Devor' },
   { code: 'putty_finish_dry_20kg', aliases: ['wall_finish_putty_20kg'], name: 'Finish quruq shpaklyovka (20 kg)', unit: 'qop', defaultPrice: 65000, category: 'Devor' },
   { code: 'pautinka_roll_50m2', aliases: ['wall_pautinka_roll_50m2'], name: 'Stekloxolst Pautinka 40g/m² (50 m²)', unit: 'rulon', defaultPrice: 240000, category: 'Devor' },
   { code: 'pautinka_glue_10kg', aliases: ['wall_pautinka_glue_10kg'], name: 'Pautinka uchun tayyor kley (10 kg)', unit: 'paqir', defaultPrice: 110000, category: 'Devor' },
   { code: 'paint_wall_15l', aliases: ['wall_paint_premium_15l'], name: 'Devor uchun mat emulsiya bo\'yog\'i (15 L)', unit: 'paqir', defaultPrice: 420000, category: 'Devor' },
+  { code: 'masking_tape_film_set', name: 'Molyarniy skotch va himoya plyonkasi', unit: 'to\'plam', defaultPrice: 35000, category: 'Devor' },
   { code: 'wallpaper_vinil_roll', aliases: ['wallpaper_roll'], name: 'Vinil / Flizelin oboy (1.06m x 10m)', unit: 'rulon', defaultPrice: 180000, category: 'Devor' },
   { code: 'wallpaper_glue_box', aliases: ['wallpaper_glue'], name: 'Flizelin oboy kleyi (quti)', unit: 'quti', defaultPrice: 45000, category: 'Devor' },
   { code: 'tile_wall_pack', aliases: ['wall_tile_pack'], name: 'Devor kafel / plitka (1.44 m² pachka)', unit: 'pachka', defaultPrice: 160000, category: 'Devor' },
   { code: 'tile_glue_c2_25kg', aliases: ['wall_tile_glue_25kg'], name: 'Kafel kleyi C2 kuchaytirilgan (25 kg)', unit: 'qop', defaultPrice: 55000, category: 'Devor' },
+  { code: 'tile_grout_fuga_2kg', aliases: ['floor_tile_grout_2kg'], name: 'Kafel choklari uchun Zatirka Fuga (2 kg)', unit: 'quti', defaultPrice: 38000, category: 'Devor' },
+  { code: 'tile_svp_cross_set', aliases: ['floor_tile_svp_set'], name: 'Kafel tekislash SVP qisqichlari to\'plami', unit: 'to\'plam', defaultPrice: 45000, category: 'Devor' },
 
   // Pol
   { code: 'cement_m400_50kg', aliases: ['floor_screed_cement_50kg'], name: 'Sement M400 styajka uchun (50 kg)', unit: 'qop', defaultPrice: 45000, category: 'Pol' },
@@ -316,6 +327,40 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: podvesCount * podvesPrice,
       });
 
+      // Samorez va dyubellar to'plami
+      const fastenerSets = Math.ceil(ceilingArea / 15.0);
+      const fastenerPrice = getMaterialPrice('fasteners_gips_set', 35000);
+      materials.push({
+        code: 'fasteners_gips_set',
+        name: 'Gipskarton samorez va dyubellar to\'plami (TN 25/35mm + bloxa + 6x40)',
+        category: 'ceiling',
+        unit: 'quti',
+        exactAmount: fastenerSets,
+        exactUnitStr: `${fastenerSets} quti`,
+        packagesCount: fastenerSets,
+        packageSize: 'to\'plam',
+        unitPrice: fastenerPrice,
+        totalPrice: fastenerSets * fastenerPrice,
+        description: 'Shift profillari va gipskarton listlarini mustahkamlash uchun'
+      });
+
+      // Serpyanka to'r va Fugen shpaklyovka
+      const chokSets = Math.ceil(ceilingArea / 20.0);
+      const chokPrice = getMaterialPrice('tape_serpyanka_fugen', 65000);
+      materials.push({
+        code: 'tape_serpyanka_fugen',
+        name: 'Gipskarton choklari uchun Serpyanka to\'r + Fugenfyuller',
+        category: 'ceiling',
+        unit: 'to\'plam',
+        exactAmount: chokSets,
+        exactUnitStr: `${chokSets} to\'plam`,
+        packagesCount: chokSets,
+        packageSize: 'lenta + 5kg',
+        unitPrice: chokPrice,
+        totalPrice: chokSets * chokPrice,
+        description: 'Gipskarton listlar tutashgan joylarni yoriqdan saqlovchi to\'r va gips'
+      });
+
       const rate = getLaborRate('ceiling_gips_plain', 50000);
       laborItems.push({
         id: 'labor_ceiling_gips_plain',
@@ -476,6 +521,23 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         unitPrice: plasterPrice,
         totalPrice: plasterBags * plasterPrice,
         description: 'Devorlarni mayoq bo\'yicha tekislash uchun gipsli qorishma'
+      });
+
+      // Mayoqlar (Mayachniy profil 6 mm, 3 metr)
+      const mayakPcs = Math.ceil(netWallArea / 2.5);
+      const mayakPrice = getMaterialPrice('mayak_plaster_6mm', 8000);
+      materials.push({
+        code: 'mayak_plaster_6mm',
+        name: 'Devor tekislash metall mayoqlari (6 mm, 3 metr)',
+        category: 'plaster',
+        unit: 'dona',
+        exactAmount: Number((netWallArea / 2.5).toFixed(1)),
+        exactUnitStr: `${(netWallArea / 2.5).toFixed(1)} dona`,
+        packagesCount: mayakPcs,
+        packageSize: '3 metr',
+        unitPrice: mayakPrice,
+        totalPrice: mayakPcs * mayakPrice,
+        description: 'Gipsli suvoqni mayoq bo\'yicha tekislash uchun ruxlangan profil'
       });
 
       const rate = getLaborRate('wall_plaster', 35000);
@@ -725,6 +787,39 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
         totalPrice: glueBags * gluePrice,
       });
 
+      // Zatirka (Fuga)
+      const groutPacks = Math.ceil((netWallArea * 0.35) / 2.0);
+      const groutPrice = getMaterialPrice('tile_grout_fuga_2kg', 38000);
+      materials.push({
+        code: 'tile_grout_fuga_2kg',
+        name: 'Kafel choklari uchun namlikka chidamli Zatirka Fuga (2 kg)',
+        category: 'tile',
+        unit: 'quti',
+        exactAmount: Number((netWallArea * 0.35).toFixed(1)),
+        exactUnitStr: `${(netWallArea * 0.35).toFixed(1)} kg`,
+        packagesCount: groutPacks,
+        packageSize: '2 kg',
+        unitPrice: groutPrice,
+        totalPrice: groutPacks * groutPrice,
+        description: 'Kafel oralaridagi choklarni suv va zamburug\'dan himoyalovchi fuga'
+      });
+
+      // SVP tekislagichlar
+      const svpSets = Math.ceil(netWallArea / 12.0);
+      const svpPrice = getMaterialPrice('tile_svp_cross_set', 45000);
+      materials.push({
+        code: 'tile_svp_cross_set',
+        name: 'Kafel tekislash SVP qisqichlari va krestiklar to\'plami',
+        category: 'tile',
+        unit: 'to\'plam',
+        exactAmount: svpSets,
+        exactUnitStr: `${svpSets} to\'plam`,
+        packagesCount: svpSets,
+        packageSize: '100 dona',
+        unitPrice: svpPrice,
+        totalPrice: svpSets * svpPrice,
+      });
+
       const tileRate = getLaborRate('wall_tile', 90000);
       laborItems.push({
         id: 'labor_wall_tile',
@@ -970,8 +1065,19 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
     }
   }
 
+  // Excluded materiallarni inobatga olgan holda hisoblash
+  const excludedCodes = input.excludedMaterialCodes || [];
+  const processedMaterials: MaterialItem[] = materials.map((item) => {
+    const isExcluded = excludedCodes.includes(item.code);
+    return {
+      ...item,
+      isExcluded,
+      totalPrice: isExcluded ? 0 : item.totalPrice,
+    };
+  });
+
   // Jami summalarni hisoblash
-  const materialsTotal = materials.reduce((sum, item) => sum + item.totalPrice, 0);
+  const materialsTotal = processedMaterials.reduce((sum, item) => sum + item.totalPrice, 0);
   const laborTotal = laborItems.reduce((sum, item) => sum + item.totalPrice, 0);
   const grandTotal = materialsTotal + laborTotal;
 
@@ -985,7 +1091,7 @@ export function calculateSmartEstimate(input: RoomInput): EstimateResult {
       plinthLength,
       totalWorkArea,
     },
-    materials,
+    materials: processedMaterials,
     laborItems,
     materialsTotal,
     laborTotal,
