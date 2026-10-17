@@ -60,7 +60,7 @@ app.include_router(estimates.router, prefix="/api/v1")
 app.include_router(billing.router, prefix="/api/v1")
 app.include_router(leads.router, prefix="/api/v1")
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {
         "app": "Smeta24 API & Telegram Bot",
@@ -70,6 +70,7 @@ def root():
         "docs": "/docs"
     }
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok"}
+
