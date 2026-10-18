@@ -38,3 +38,8 @@ Thumbs.db
 
 # Vercel
 .vercel/
+
+# Databases
+*.db
+*.sqlite3
+apps/backend/data/*.db

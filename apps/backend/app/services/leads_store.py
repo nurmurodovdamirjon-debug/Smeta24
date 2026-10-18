@@ -1,15 +1,12 @@
 import os
 import json
 import uuid
+import threading
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
+from app.db.database import get_connection
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-LEADS_FILE = os.path.join(DATA_DIR, "leads.json")
-
-def ensure_data_dir():
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR, exist_ok=True)
+_leads_lock = threading.Lock()
 
 def mask_phone(phone: str) -> str:
     cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
@@ -17,86 +14,101 @@ def mask_phone(phone: str) -> str:
         return f"{cleaned[:6]} ••• •• {cleaned[-2:]}"
     return "+998 9• ••• •• ••"
 
-INITIAL_LEADS: List[Dict[str, Any]] = [
-    {
-        "id": "LD-9821",
-        "title": "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq",
-        "client_name": "Farrux",
-        "client_phone": "+998 90 847 32 11",
-        "region": "Toshkent shahri",
-        "area": "78.4 m²",
-        "budget": "16 400 000 so'm",
-        "lead_type": "materials_order",
-        "price": 10000,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "purchased_by": [],
-        "status": "open"
-    },
-    {
-        "id": "LD-9818",
-        "title": "Chilonzor — Polga parket yotqizish va plintus",
-        "client_name": "Sanjar",
-        "client_phone": "+998 97 122 89 00",
-        "region": "Toshkent shahri",
-        "area": "42.5 m²",
-        "budget": "7 250 000 so'm",
-        "lead_type": "need_master",
-        "price": 10000,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "purchased_by": [],
-        "status": "open"
-    },
-    {
-        "id": "LD-9804",
-        "title": "Samarqand — Kottej pol steshkasi, oboy va figurali shift",
-        "client_name": "Jamshid",
-        "client_phone": "+998 93 456 78 90",
-        "region": "Samarqand",
-        "area": "140.0 m²",
-        "budget": "38 000 000 so'm",
-        "lead_type": "materials_order",
-        "price": 15000,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "purchased_by": [],
-        "status": "open"
-    },
-    {
-        "id": "LD-9795",
-        "title": "Farg'ona — Yangi xonadon kafel va devor shpaklyovka",
-        "client_name": "Otabek",
-        "client_phone": "+998 91 654 32 10",
-        "region": "Farg'ona",
-        "area": "64.0 m²",
-        "budget": "11 200 000 so'm",
-        "lead_type": "need_master",
-        "price": 10000,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "purchased_by": [],
-        "status": "open"
+def format_lead_date(dt_str: Optional[str]) -> str:
+    if not dt_str:
+        return "Yaqinda"
+    try:
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        minutes = int(diff.total_seconds() // 60)
+        if minutes < 5:
+            return "Hozirgina"
+        elif minutes < 60:
+            return f"{minutes} daqiqa oldin"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours} soat oldin"
+        days = hours // 24
+        return f"{days} kun oldin"
+    except Exception:
+        return "Bugun"
+
+def _row_to_lead_dict(row: Any) -> Dict[str, Any]:
+    purchased_by_raw = row["purchased_by"] or "[]"
+    try:
+        purchased_by = json.loads(purchased_by_raw) if isinstance(purchased_by_raw, str) else purchased_by_raw
+    except Exception:
+        purchased_by = []
+
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "client_name": row["client_name"],
+        "client_phone": row["client_phone"],
+        "region": row["region"],
+        "area": row["area"],
+        "budget": row["budget"],
+        "lead_type": row["lead_type"],
+        "price": row["price"],
+        "created_at": row["created_at"],
+        "status": row["status"],
+        "purchased_by": purchased_by
     }
-]
 
 def load_leads() -> List[Dict[str, Any]]:
-    ensure_data_dir()
-    if not os.path.exists(LEADS_FILE):
-        save_leads(INITIAL_LEADS)
-        return INITIAL_LEADS
-    try:
-        with open(LEADS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else INITIAL_LEADS
-    except Exception:
-        return INITIAL_LEADS
+    """Barcha lidlarni SQLite bazasidan yuklash."""
+    with _leads_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        leads = [_row_to_lead_dict(r) for r in rows]
+        conn.close()
+        return leads
 
 def save_leads(leads: List[Dict[str, Any]]):
-    ensure_data_dir()
-    try:
-        with open(LEADS_FILE, "w", encoding="utf-8") as f:
-            json.dump(leads, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving leads to {LEADS_FILE}: {e}")
+    """Lidlarni SQLite bazasiga saqlash (moslik uchun)."""
+    with _leads_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        for l in leads:
+            purchased_str = json.dumps(l.get("purchased_by", []))
+            cursor.execute("""
+                INSERT OR REPLACE INTO leads 
+                (id, title, client_name, client_phone, region, area, budget, lead_type, price, created_at, status, purchased_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                l.get("id"),
+                l.get("title"),
+                l.get("client_name"),
+                l.get("client_phone"),
+                l.get("region"),
+                l.get("area"),
+                l.get("budget"),
+                l.get("lead_type"),
+                l.get("price", 10000),
+                l.get("created_at"),
+                l.get("status", "open"),
+                purchased_str
+            ))
+        conn.commit()
+        conn.close()
+
+def get_lead_by_id(lead_id: str) -> Optional[Dict[str, Any]]:
+    """Lidni ID orqali bazadan olish."""
+    with _leads_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return _row_to_lead_dict(row)
 
 def get_public_leads(user_id: Optional[Any] = None) -> List[Dict[str, Any]]:
+    """Birja ro'yxati uchun formatlangan lidlarni qaytaradi."""
     leads = load_leads()
     formatted = []
     user_str = str(user_id) if user_id else None
@@ -127,26 +139,6 @@ def get_public_leads(user_id: Optional[Any] = None) -> List[Dict[str, Any]]:
         })
     return formatted
 
-def format_lead_date(dt_str: Optional[str]) -> str:
-    if not dt_str:
-        return "Yaqinda"
-    try:
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
-        diff = now - dt
-        minutes = int(diff.total_seconds() // 60)
-        if minutes < 5:
-            return "Hozirgina"
-        elif minutes < 60:
-            return f"{minutes} daqiqa oldin"
-        hours = minutes // 60
-        if hours < 24:
-            return f"{hours} soat oldin"
-        days = hours // 24
-        return f"{days} kun oldin"
-    except Exception:
-        return "Bugun"
-
 def add_new_lead(
     client_phone: str,
     region: str,
@@ -156,59 +148,92 @@ def add_new_lead(
     client_name: str = "Mijoz",
     lead_type: str = "materials_order"
 ) -> Dict[str, Any]:
-    leads = load_leads()
-    new_num = 9900 + len(leads) + 1
-    new_id = f"LD-{new_num}"
+    """Yangi buyurtmani SQLite bazasiga kiritish."""
+    with _leads_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as cnt FROM leads")
+        count = cursor.fetchone()["cnt"]
 
-    type_title = "Ulgurji material" if lead_type == "materials_order" else "Usta xizmati"
-    title = f"{region} — {room_name} ({type_title})"
+        new_num = 9900 + count + 1
+        new_id = f"LD-{new_num}"
 
-    new_lead = {
-        "id": new_id,
-        "title": title,
-        "client_name": client_name or "Mijoz",
-        "client_phone": client_phone,
-        "region": region,
-        "area": f"{area_m2:.1f} m²" if area_m2 else "Noma'lum",
-        "budget": f"{budget_sum:,}".replace(",", " ") + " so'm",
-        "lead_type": lead_type,
-        "price": 10000,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "purchased_by": [],
-        "status": "open"
-    }
+        type_title = "Ulgurji material" if lead_type == "materials_order" else "Usta xizmati"
+        title = f"{region} — {room_name} ({type_title})"
+        now_str = datetime.now(timezone.utc).isoformat()
+        area_str = f"{area_m2:.1f} m²" if area_m2 else "Noma'lum"
+        budget_str = f"{budget_sum:,}".replace(",", " ") + " so'm"
 
-    # Yangi lidni ro'yxat boshiga qo'shamiz
-    leads.insert(0, new_lead)
-    save_leads(leads)
-    return new_lead
+        cursor.execute("""
+            INSERT INTO leads 
+            (id, title, client_name, client_phone, region, area, budget, lead_type, price, created_at, status, purchased_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            new_id,
+            title,
+            client_name or "Mijoz",
+            client_phone,
+            region,
+            area_str,
+            budget_str,
+            lead_type,
+            10000,
+            now_str,
+            "open",
+            "[]"
+        ))
+        conn.commit()
+        conn.close()
+
+        return {
+            "id": new_id,
+            "title": title,
+            "client_name": client_name or "Mijoz",
+            "client_phone": client_phone,
+            "region": region,
+            "area": area_str,
+            "budget": budget_str,
+            "lead_type": lead_type,
+            "price": 10000,
+            "created_at": now_str,
+            "purchased_by": [],
+            "status": "open"
+        }
 
 def purchase_lead(lead_id: str, user_id: Any) -> Optional[Dict[str, Any]]:
-    leads = load_leads()
-    target = None
-    user_str = str(user_id)
+    """Foydalanuvchi tomonidan lidni sotib olish."""
+    with _leads_lock:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return None
 
-    for item in leads:
-        if item["id"] == lead_id:
-            purchased_list = [str(u) for u in item.get("purchased_by", [])]
-            if user_str not in purchased_list:
-                purchased_list.append(user_str)
-                item["purchased_by"] = purchased_list
-                save_leads(leads)
-            target = item
-            break
+        lead_dict = _row_to_lead_dict(row)
+        purchased_list = [str(u) for u in lead_dict.get("purchased_by", [])]
+        user_str = str(user_id)
 
-    if not target:
-        return None
+        if user_str not in purchased_list:
+            purchased_list.append(user_str)
+            cursor.execute(
+                "UPDATE leads SET purchased_by = ? WHERE id = ?",
+                (json.dumps(purchased_list), lead_id)
+            )
+            conn.commit()
+            lead_dict["purchased_by"] = purchased_list
 
-    return {
-        "id": target["id"],
-        "title": target["title"],
-        "client_name": target.get("client_name", "Mijoz"),
-        "client_phone": target["client_phone"],
-        "region": target.get("region"),
-        "area": target.get("area"),
-        "budget": target.get("budget"),
-        "lead_type": target.get("lead_type"),
-        "price": target.get("price", 10000)
-    }
+        conn.close()
+
+        return {
+            "id": lead_dict["id"],
+            "title": lead_dict["title"],
+            "client_name": lead_dict.get("client_name", "Mijoz"),
+            "client_phone": lead_dict["client_phone"],
+            "region": lead_dict.get("region"),
+            "area": lead_dict.get("area"),
+            "budget": lead_dict.get("budget"),
+            "lead_type": lead_dict.get("lead_type"),
+            "price": lead_dict.get("price", 10000)
+        }

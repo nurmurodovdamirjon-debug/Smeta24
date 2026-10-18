@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   calculateSmartEstimate,
   calculateProjectSummary,
@@ -24,6 +24,8 @@ import {
   getTelegramUser,
   TelegramUser,
 } from "@/lib/telegram";
+import { TopupModal } from "@/components/modals/TopupModal";
+import { BottomNav, NavTabItem } from "@/components/layout/BottomNav";
 import {
   Calculator,
   UserCheck,
@@ -599,8 +601,16 @@ export default function Smeta24MiniApp() {
   const [isMasterMode, setIsMasterMode] = useState(true);
   const [brandName, setBrandName] = useState("ProFinish Uz");
   const [masterPhone, setMasterPhone] = useState("+998 90 123 45 67");
-  const [userBalance, setUserBalance] = useState(15000);
+  const [userBalance, setUserBalance] = useState(() => {
+    if (typeof window === 'undefined') return 15000;
+    const saved = localStorage.getItem('smeta24_balance');
+    return saved ? parseInt(saved, 10) : 15000;
+  });
   const [tier, setTier] = useState<QualityTier>("standard");
+
+  useEffect(() => {
+    try { localStorage.setItem('smeta24_balance', String(userBalance)); } catch(e) {}
+  }, [userBalance]);
 
   // Profile sub-tab
   const [profileSubTab, setProfileSubTab] = useState<'rates' | 'materials'>('rates');
@@ -674,11 +684,7 @@ export default function Smeta24MiniApp() {
   const [editQtyInput, setEditQtyInput] = useState<number>(1);
 
   // Lid-birja
-  const [leadsList, setLeadsList] = useState<any[]>([
-    { id: "LD-9821", title: "Yunusobod — 3 xonali gipskarton va kraskapult bo'yoq", area: "78.4 m²", budget: "16 400 000 so'm", date: "10 daqiqa oldin", region: "Toshkent shahri", price: 10000, lead_type: "materials_order", isPurchased: false, contact: "+998 90 ••• •• 11 (Farrux)" },
-    { id: "LD-9818", title: "Chilonzor — Polga parket yotqizish va plintus", area: "42.5 m²", budget: "7 250 000 so'm", date: "35 daqiqa oldin", region: "Toshkent shahri", price: 10000, lead_type: "need_master", isPurchased: false, contact: "+998 97 ••• •• 00 (Sanjar)" },
-    { id: "LD-9804", title: "Samarqand — Kottej pol steshkasi, oboy va figurali shift", area: "140.0 m²", budget: "38 000 000 so'm", date: "2 soat oldin", region: "Samarqand", price: 15000, lead_type: "materials_order", isPurchased: false, contact: "+998 93 ••• •• 90 (Jamshid)" },
-  ]);
+  const [leadsList, setLeadsList] = useState<any[]>([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [selectedLeadRegion, setSelectedLeadRegion] = useState("Barchasi");
   const [selectedLeadType, setSelectedLeadType] = useState("Barchasi");
@@ -712,7 +718,7 @@ export default function Smeta24MiniApp() {
         try {
           const parsedProj = JSON.parse(savedProjRaw);
           if (Array.isArray(parsedProj)) setSavedProjects(parsedProj);
-        } catch (e) {}
+        } catch (e) { console.warn('Saved projects parse error:', e); }
       }
       const savedCurrentName = localStorage.getItem("smeta24_current_project_name");
       if (savedCurrentName) setCurrentProjectName(savedCurrentName);
@@ -720,12 +726,30 @@ export default function Smeta24MiniApp() {
       console.warn("Storage load error:", e);
     }
 
+    const fetchUserBalance = async (uid: number) => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+        const res = await fetch(`${backendUrl}/api/v1/billing/balance?user_id=${uid}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.balance === "number") {
+            setUserBalance(data.balance);
+          }
+        }
+      } catch (e) {
+        console.warn("Balansni yuklashda xatolik:", e);
+      }
+    };
+
     const handleInit = () => {
       try {
         initTelegramApp();
         const user = getTelegramUser();
         if (user) {
           setTgUser(user);
+          if (user.id) {
+            fetchUserBalance(user.id);
+          }
           if (user.first_name && !localStorage.getItem("smeta24_brand_name")) {
             setBrandName(`Usta ${user.first_name}`);
           }
@@ -1113,12 +1137,14 @@ export default function Smeta24MiniApp() {
   };
 
   // ===== UNLOCK / PDF =====
+  // TODO: Backend billing API bilan ulash kerak
   const handleUnlockPdf = () => {
     if (userBalance >= 5000) {
       triggerNotificationHaptic("success");
       setUserBalance((prev) => prev - 5000);
       setIsUnlocked(true);
       setShowPdfModal(true);
+      showQuickToast("PDF ochildi! (Haqiqiy to'lov tizimi tez orada ulanadi)");
     } else {
       triggerNotificationHaptic("warning");
       setShowTopupModal(true);
@@ -1136,7 +1162,12 @@ export default function Smeta24MiniApp() {
     });
   }, [leadsList, selectedLeadRegion, selectedLeadType]);
 
-  const fetchLeads = async () => {
+  const leadsLastFetched = useRef<number>(0);
+  const fetchLeads = async (force: boolean = false) => {
+    const isForce = force === true;
+    const now = Date.now();
+    if (!isForce && now - leadsLastFetched.current < 30000) return; // 30 sekund cache
+    leadsLastFetched.current = now;
     try {
       setIsLoadingLeads(true);
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
@@ -1171,9 +1202,20 @@ export default function Smeta24MiniApp() {
         body: JSON.stringify({ user_id: uid }),
       });
       const data = await res.json();
+      if (res.status === 402) {
+        triggerNotificationHaptic("warning");
+        setSaveToast(`⚠️ ${data.detail || "Hisobingizda mablag' yetarli emas!"}`);
+        setShowTopupModal(true);
+        setTimeout(() => setSaveToast(""), 4000);
+        return;
+      }
       if (res.ok && data.status === "purchased") {
         triggerNotificationHaptic("success");
-        setUserBalance((prev) => Math.max(0, prev - price));
+        if (typeof data.current_balance === "number") {
+          setUserBalance(data.current_balance);
+        } else {
+          setUserBalance((prev) => Math.max(0, prev - price));
+        }
         setLeadsList((prev) => prev.map((ld) =>
           ld.id === leadId ? { ...ld, isPurchased: true, contact: `${data.client_phone} (${data.client_name || "Mijoz"})`, phone_raw: data.client_phone, client_name: data.client_name } : ld
         ));
@@ -1304,10 +1346,32 @@ export default function Smeta24MiniApp() {
 
   const handlePrintPdf = () => { triggerHaptic("light"); window.print(); };
 
-  const handleTopup = (amount: number) => {
+  const handleTopup = async (amount: number) => {
+    try {
+      triggerHaptic("medium");
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL || "https://smeta24-backend.onrender.com";
+      const uid = tgUser?.id || (typeof window !== "undefined" && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || 12345678;
+      const res = await fetch(`${backendUrl}/api/v1/billing/topup-demo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: uid, amount, provider: "demo" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.new_balance === "number") {
+          setUserBalance(data.new_balance);
+        } else {
+          setUserBalance((prev) => prev + amount);
+        }
+      } else {
+        setUserBalance((prev) => prev + amount);
+      }
+    } catch (e) {
+      setUserBalance((prev) => prev + amount);
+    }
     triggerNotificationHaptic("success");
-    setUserBalance((prev) => prev + amount);
     setShowTopupModal(false);
+    showQuickToast(`Hisobingiz ${amount.toLocaleString()} so'mga to'ldirildi! 💳`);
   };
 
   const roomColor = ROOM_COLORS[activeRoomIndex % ROOM_COLORS.length] || ROOM_COLORS[0];
@@ -2107,7 +2171,7 @@ export default function Smeta24MiniApp() {
                     {filteredLeads.length} ta faol
                   </span>
                 </div>
-                <button type="button" onClick={fetchLeads} disabled={isLoadingLeads} className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95 border border-slate-700/60" title="Yangilash">
+                <button type="button" onClick={() => fetchLeads(true)} disabled={isLoadingLeads} className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95 border border-slate-700/60" title="Yangilash">
                   <RefreshCw className={`w-4 h-4 ${isLoadingLeads ? "animate-spin text-amber-400" : ""}`} />
                 </button>
               </div>
@@ -2903,65 +2967,26 @@ export default function Smeta24MiniApp() {
       )}
 
       {/* ===== MODAL: TOPUP ===== */}
-      {showTopupModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-3 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-4 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-sm text-white">Hisobni To&apos;ldirish</h3>
-              </div>
-              <button onClick={() => setShowTopupModal(false)} className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p className="text-xs text-slate-400">PDF-smetalar yuklab olish yoki buyurtmalar birjasidan mijoz kontaktlarini sotib olish uchun balansingizni to&apos;ldiring:</p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { amount: 10000, label: "10 000 so'm" },
-                { amount: 25000, label: "25 000 so'm" },
-                { amount: 50000, label: "50 000 so'm" },
-              ].map((item) => (
-                <button key={item.amount} onClick={() => handleTopup(item.amount)}
-                  className="p-3 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-center transition active:scale-95">
-                  <span className="font-bold text-xs text-amber-400 block">{item.label}</span>
-                  <span className="text-[9px] text-slate-500">Payme / Click</span>
-                </button>
-              ))}
-            </div>
-            <div className="text-[10px] text-center text-slate-500">
-              * Sinov rejimida summa bir zumda hamyoningizga qo&apos;shiladi.
-            </div>
-          </div>
-        </div>
-      )}
+      <TopupModal
+        isOpen={showTopupModal}
+        onClose={() => setShowTopupModal(false)}
+        onTopup={handleTopup}
+      />
 
       {/* ===== BOTTOM NAVIGATION ===== */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80 px-6 py-2.5 max-w-md mx-auto">
-        <div className="flex justify-between items-center">
-          {[
-            { id: "calc" as const, label: "Kalkulyator", icon: Calculator },
-            { id: "profile" as const, label: "Narxlar & Profil", icon: UserCheck },
-            { id: "leads" as const, label: "Lid-Birja", icon: Building2 },
-            { id: "guide" as const, label: "Me'yorlar", icon: Info },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => { triggerHaptic("light"); setActiveTab(tab.id); }}
-                className={`flex flex-col items-center gap-1 transition-all duration-200 active:scale-95 ${isActive ? "text-amber-400" : "text-slate-500 hover:text-slate-400"}`}
-              >
-                <div className={`p-1 rounded-xl transition ${isActive ? "bg-amber-500/15" : "bg-transparent"}`}>
-                  <Icon className="w-5 h-5" />
-                </div>
-                <span className={`text-[10px] ${isActive ? "font-bold text-amber-400" : "font-medium"}`}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <BottomNav
+        tabs={[
+          { id: "calc", label: "Kalkulyator", icon: Calculator },
+          { id: "profile", label: "Narxlar & Profil", icon: UserCheck },
+          { id: "leads", label: "Lid-Birja", icon: Building2 },
+          { id: "guide", label: "Me'yorlar", icon: Info },
+        ]}
+        activeTab={activeTab}
+        onSelectTab={(tabId) => {
+          triggerHaptic("light");
+          setActiveTab(tabId);
+        }}
+      />
     </div>
   );
 }

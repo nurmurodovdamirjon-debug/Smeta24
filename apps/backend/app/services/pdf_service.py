@@ -1,9 +1,12 @@
 import os
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from typing import Dict, Any
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
-env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+env = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR),
+    autoescape=select_autoescape(['html', 'xml'])
+)
 
 def render_estimate_html(data: Dict[str, Any]) -> str:
     template = env.get_template("estimate_pdf.html")
@@ -37,6 +40,7 @@ def generate_estimate_pdf_bytes(html_content) -> bytes:
     try:
         from weasyprint import HTML
         return HTML(string=html_content).write_pdf()
+    except ImportError:
+        raise RuntimeError("WeasyPrint o'rnatilmagan. PDF yaratib bo'lmadi.")
     except Exception as e:
-        print(f"WeasyPrint bytes error, fallback to HTML bytes: {e}")
-        return html_content.encode("utf-8")
+        raise RuntimeError(f"PDF yaratishda xatolik: {e}")
